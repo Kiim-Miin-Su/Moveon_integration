@@ -372,7 +372,14 @@ test("writes Related Sprint as relation when a related page is provided", () => 
 });
 
 test("writes parent issue relation when a parent page is provided", () => {
-  const properties = buildProperties(issue, {
+  const childIssue: JiraIssue = {
+    ...issue,
+    fields: {
+      ...issue.fields,
+      subtasks: [],
+    },
+  };
+  const properties = buildProperties(childIssue, {
     parentIssuePageId: "parent-page-id",
     propertySchema: {
       "Parent Issue": { type: "relation" },
@@ -387,6 +394,21 @@ test("writes parent issue relation when a parent page is provided", () => {
     ],
   });
   assert.equal(properties.Subtasks, undefined);
+});
+
+test("clears parent issue relation when the current Jira issue is treated as a parent", () => {
+  assert.deepEqual(
+    buildProperties(issue, {
+      parentIssuePageId: "parent-page-id",
+      hasParentIssue: false,
+      propertySchema: {
+        "Parent Issue": { type: "relation" },
+      },
+    })["Parent Issue"],
+    {
+      relation: [],
+    }
+  );
 });
 
 test("clears stale linked issue relation when Jira has no linked issues", () => {

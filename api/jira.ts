@@ -333,6 +333,12 @@ function getLinkedIssueKeys(issue: JiraIssue) {
   ];
 }
 
+function getSubtaskKeys(issue: JiraIssue) {
+  return (issue.fields.subtasks || [])
+    .map((subtask) => subtask.key)
+    .filter((key): key is string => Boolean(key));
+}
+
 function getIssueLinkPreview(issue: JiraIssue) {
   return (issue.fields.issuelinks || []).map((link) => ({
     type: link.type?.name || null,
@@ -486,9 +492,7 @@ async function syncHierarchyRelations(
 ) {
   const parentKey = issue.fields.parent?.key;
   const hasSubtasksRelation = getSchemaType(propertySchema, "Subtasks") === "relation";
-  const subtaskKeys = (issue.fields.subtasks || [])
-    .map((subtask) => subtask.key)
-    .filter((key): key is string => Boolean(key));
+  const subtaskKeys = getSubtaskKeys(issue);
 
   if (hasSubtasksRelation) {
     const subtaskPageIds: string[] = [];
@@ -520,7 +524,7 @@ async function syncHierarchyRelations(
     }
   }
 
-  if (parentKey && hasSubtasksRelation) {
+  if (parentKey && hasSubtasksRelation && subtaskKeys.length === 0) {
     const parentPage = await findPageByJiraKey(parentKey, propertySchema);
 
     if (parentPage?.id === currentPageId) {
@@ -543,6 +547,25 @@ async function syncHierarchyRelations(
       });
     } else {
       console.warn("Cannot add current issue to parent Subtasks; parent page is not synced.", {
+        key: issue.key,
+        parentKey,
+      });
+    }
+  }
+
+  if (parentKey && hasSubtasksRelation && subtaskKeys.length > 0) {
+    const parentPage = await findPageByJiraKey(parentKey, propertySchema);
+
+    if (parentPage) {
+      await updateRelationProperty(
+        parentPage.id,
+        propertySchema,
+        "Subtasks",
+        getPageRelationIds(parentPage, propertySchema, "Subtasks").filter(
+          (pageId) => pageId !== currentPageId
+        )
+      );
+      console.log("Removed current Jira issue from parent Subtasks because current issue has its own subtasks.", {
         key: issue.key,
         parentKey,
       });
@@ -729,7 +752,11 @@ function isIssueCreatedEvent(payload: JiraWebhookPayload | JiraIssue) {
 async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionPropertySchema) {
   const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
   const relatedSprintPageIds = await getRelatedSprintPageIds(issue, propertySchema);
-  const parentIssuePageId = await getParentIssuePageId(issue, propertySchema);
+  const subtaskKeys = getSubtaskKeys(issue);
+  const shouldWriteParentIssue = subtaskKeys.length === 0 && Boolean(issue.fields.parent?.key);
+  const parentIssuePageId = shouldWriteParentIssue
+    ? await getParentIssuePageId(issue, propertySchema)
+    : undefined;
 
   const properties = buildProperties(issue, {
     jiraBaseUrl: JIRA_BASE_URL,
@@ -740,7 +767,7 @@ async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionProp
     relatedSprintPageIds,
     hasLinkedIssues: getLinkedIssueKeys(issue).length > 0,
     parentIssuePageId,
-    hasParentIssue: Boolean(issue.fields.parent?.key),
+    hasParentIssue: shouldWriteParentIssue,
   });
 
   logSyncDiagnostics(issue, propertySchema, properties);

@@ -449,15 +449,17 @@ export function buildProperties(
   }
 
   if (getSchemaProperty(options.propertySchema, "Parent Issue")?.type === "relation") {
-    const relation = options.parentIssuePageId
-      ? [
-          {
-            id: options.parentIssuePageId,
-          },
-        ]
-      : options.hasParentIssue === false
-        ? []
-        : undefined;
+    let relation: Array<{ id: string }> | [] | undefined;
+
+    if (options.hasParentIssue === false) {
+      relation = [];
+    } else if (options.parentIssuePageId) {
+      relation = [
+        {
+          id: options.parentIssuePageId,
+        },
+      ];
+    }
 
     if (relation) {
       properties["Parent Issue"] = {
