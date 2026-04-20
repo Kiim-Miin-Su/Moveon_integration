@@ -25,6 +25,14 @@ type JiraSprint = {
   endDate?: string;
 };
 
+// email parsing
+const ASSIGNEE_MAP: Record<string, string> = {
+  "박서영": "psy4214@naver.com",
+  "이은경": "dmsrud0920@chosun.ac.kr",
+};
+
+
+// to korean time-zone
 function toKSTDateString(dateStr?: string): string | undefined {
   if (!dateStr) return undefined;
   const date = new Date(dateStr);
