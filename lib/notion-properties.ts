@@ -420,6 +420,8 @@ export function buildProperties(
       ],
     };
   }
+  console.log("schema 담당자 type:", getSchemaProperty(options.propertySchema, "담당자")?.type);
+  console.log("assigneeNotionUserId:", options.assigneeNotionUserId);
 
   if (description) {
     properties.Description = {
