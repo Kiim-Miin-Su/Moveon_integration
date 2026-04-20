@@ -277,6 +277,65 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
   return relatedPageIds;
 }
 
+async function findPageIdByJiraKey(jiraKey: string) {
+  return (await findPageByJiraKey(jiraKey))?.id;
+}
+
+async function getParentIssuePageId(issue: JiraIssue, propertySchema: NotionPropertySchema) {
+  const parentIssueProperty = getSchemaEntry(propertySchema, "Parent Issue");
+
+  if (parentIssueProperty?.property.type !== "relation") return undefined;
+
+  const parentKey = issue.fields.parent?.key;
+  if (!parentKey) return undefined;
+
+  const parentPageId = await findPageIdByJiraKey(parentKey);
+
+  if (!parentPageId) {
+    console.warn("No synced Notion page found for Jira parent issue.", {
+      key: issue.key,
+      parentKey,
+    });
+    return undefined;
+  }
+
+  return parentPageId;
+}
+
+async function getSubtaskPageIds(issue: JiraIssue, propertySchema: NotionPropertySchema) {
+  const subtasksProperty = getSchemaEntry(propertySchema, "Subtasks");
+
+  if (subtasksProperty?.property.type !== "relation") return undefined;
+
+  const subtaskKeys = (issue.fields.subtasks || [])
+    .map((subtask) => subtask.key)
+    .filter((key): key is string => Boolean(key));
+
+  if (subtaskKeys.length === 0) return undefined;
+
+  const subtaskPageIds = (
+    await Promise.all(subtaskKeys.map((subtaskKey) => findPageIdByJiraKey(subtaskKey)))
+  ).filter((id): id is string => Boolean(id));
+
+  if (subtaskPageIds.length === 0) {
+    console.warn("No synced Notion pages found for Jira subtasks.", {
+      key: issue.key,
+      subtaskKeys,
+    });
+    return undefined;
+  }
+
+  if (subtaskPageIds.length < subtaskKeys.length) {
+    console.warn("Some Jira subtasks are not synced to Notion yet.", {
+      key: issue.key,
+      subtaskKeys,
+      subtaskPageCount: subtaskPageIds.length,
+    });
+  }
+
+  return subtaskPageIds;
+}
+
 function getPayloadType(value: unknown) {
   if (!value || typeof value !== "object") return typeof value;
 
@@ -317,6 +376,8 @@ function logSyncDiagnostics(
     { property: "Story point estimate", source: JIRA_STORY_POINTS_FIELD },
     { property: "Updated at", source: "issue.fields.updated" },
     { property: "Related Sprint", source: "issue.fields.issuelinks[].inwardIssue/outwardIssue.key" },
+    { property: "Parent Issue", source: "issue.fields.parent.key" },
+    { property: "Subtasks", source: "issue.fields.subtasks[].key" },
     { property: "Sprint 기간", source: JIRA_SPRINT_FIELD || "customfield_10020" },
     { property: "Jira URL", source: "JIRA_BASE_URL/self" },
   ];
@@ -342,6 +403,8 @@ function logSyncDiagnostics(
     sprintName: getSprint(issue, JIRA_SPRINT_FIELD)?.name || null,
     linkedIssueKeys: getLinkedIssueKeys(issue),
     issueLinks: getIssueLinkPreview(issue),
+    parentKey: issue.fields.parent?.key || null,
+    subtaskKeys: (issue.fields.subtasks || []).map((subtask) => subtask.key).filter(Boolean),
     hasAssignee: Boolean(issue.fields.assignee),
     assigneeHasEmail: Boolean(issue.fields.assignee?.emailAddress),
     customFields: getCustomFieldPreview(issue),
@@ -434,6 +497,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const propertySchema = await getPropertySchema();
     const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
     const relatedSprintPageIds = await getRelatedSprintPageIds(issue, propertySchema);
+    const parentIssuePageId = await getParentIssuePageId(issue, propertySchema);
+    const subtaskPageIds = await getSubtaskPageIds(issue, propertySchema);
     const properties = buildProperties(issue, {
       jiraBaseUrl: JIRA_BASE_URL,
       sprintField: JIRA_SPRINT_FIELD,
@@ -441,6 +506,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       propertySchema,
       assigneeNotionUserId,
       relatedSprintPageIds,
+      parentIssuePageId,
+      subtaskPageIds,
     });
 
     logSyncDiagnostics(issue, propertySchema, properties);

@@ -66,6 +66,17 @@ const issue: JiraIssue = {
         },
       },
     ],
+    parent: {
+      key: "TMO-2",
+    },
+    subtasks: [
+      {
+        key: "TMO-3",
+      },
+      {
+        key: "TMO-4",
+      },
+    ],
   },
 };
 
@@ -81,12 +92,13 @@ test("maps Jira statuses to Notion status options", () => {
   assert.equal(mapStatus(undefined), "Todo");
 });
 
-test("maps known Jira labels and ignores unknown labels", () => {
+test("keeps Jira labels as-is", () => {
   assert.deepEqual(mapLabels(["ui/ux", "feature", "documentation", "cicd", "other"]), [
-    { name: "UI/UX" },
-    { name: "Feature" },
-    { name: "Docs" },
-    { name: "CI/CD" },
+    { name: "ui/ux" },
+    { name: "feature" },
+    { name: "documentation" },
+    { name: "cicd" },
+    { name: "other" },
   ]);
 });
 
@@ -162,7 +174,7 @@ test("builds Notion page properties from a Jira issue", () => {
       },
     },
     Labels: {
-      multi_select: [{ name: "UI/UX" }, { name: "Docs" }, { name: "CI/CD" }],
+      multi_select: [{ name: "ui-ux" }, { name: "docs" }, { name: "unknown" }, { name: "CI/CD" }],
     },
     "Issue Type": {
       select: {
@@ -229,6 +241,8 @@ test("adapts page properties to the Notion data source schema", () => {
       "Jira Key": { type: "rich_text" },
       담당자: { type: "people" },
       "Related Sprint": { type: "relation" },
+      "Parent Issue": { type: "relation" },
+      Subtasks: { type: "relation" },
       "Sprint 기간": { type: "date" },
     }),
     {
@@ -265,7 +279,7 @@ test("adapts page properties to the Notion data source schema", () => {
         },
       },
       Labels: {
-        multi_select: [{ name: "UI/UX" }, { name: "Docs" }, { name: "CI/CD" }],
+        multi_select: [{ name: "ui-ux" }, { name: "docs" }, { name: "unknown" }, { name: "CI/CD" }],
       },
       "Issue Type": {
         select: {
@@ -333,4 +347,26 @@ test("writes Related Sprint as relation when a related page is provided", () => 
       ],
     }
   );
+});
+
+test("writes parent and subtasks as separate relations when related pages are provided", () => {
+  const properties = buildProperties(issue, {
+    parentIssuePageId: "parent-page-id",
+    subtaskPageIds: ["subtask-page-id-1", "subtask-page-id-2"],
+    propertySchema: {
+      "Parent Issue": { type: "relation" },
+      Subtasks: { type: "relation" },
+    },
+  });
+
+  assert.deepEqual(properties["Parent Issue"], {
+    relation: [
+      {
+        id: "parent-page-id",
+      },
+    ],
+  });
+  assert.deepEqual(properties.Subtasks, {
+    relation: [{ id: "subtask-page-id-1" }, { id: "subtask-page-id-2" }],
+  });
 });

@@ -70,25 +70,13 @@ export function mapStatus(status?: string) {
 }
 
 export function mapLabel(label: string) {
-  const normalized = label.trim().toLowerCase().replace(/[\s_-]+/g, "");
-
-  if (normalized === "ui/ux" || normalized === "uiux") return "UI/UX";
-  if (normalized === "feature") return "Feature";
-  if (normalized === "docs" || normalized === "documentation") return "Docs";
-  if (normalized === "ci/cd" || normalized === "cicd") return "CI/CD";
-
-  return null;
+  return label.trim();
 }
 
 export function mapLabels(labels?: string[]) {
-  const mapped = new Set<string>();
-
-  for (const label of labels || []) {
-    const notionLabel = mapLabel(label);
-    if (notionLabel) mapped.add(notionLabel);
-  }
-
-  return [...mapped].map((name) => ({ name }));
+  return [
+    ...new Set((labels || []).map(mapLabel).filter((label): label is string => Boolean(label))),
+  ].map((name) => ({ name }));
 }
 
 export function mapIssueType(issueType?: string) {
@@ -339,6 +327,8 @@ export function buildProperties(
     propertySchema?: NotionPropertySchema;
     assigneeNotionUserId?: string;
     relatedSprintPageIds?: string[];
+    parentIssuePageId?: string;
+    subtaskPageIds?: string[];
     storyPointsField?: string;
   } = {}
 ): NotionProperties {
@@ -440,6 +430,28 @@ export function buildProperties(
   ) {
     properties["Related Sprint"] = {
       relation: options.relatedSprintPageIds.map((id) => ({ id })),
+    };
+  }
+
+  if (
+    getSchemaProperty(options.propertySchema, "Parent Issue")?.type === "relation" &&
+    options.parentIssuePageId
+  ) {
+    properties["Parent Issue"] = {
+      relation: [
+        {
+          id: options.parentIssuePageId,
+        },
+      ],
+    };
+  }
+
+  if (
+    getSchemaProperty(options.propertySchema, "Subtasks")?.type === "relation" &&
+    options.subtaskPageIds?.length
+  ) {
+    properties.Subtasks = {
+      relation: options.subtaskPageIds.map((id) => ({ id })),
     };
   }
 

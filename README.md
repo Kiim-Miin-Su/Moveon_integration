@@ -59,6 +59,8 @@ Share the Notion data source with the Notion integration, then make sure these p
 | Story point estimate | Number | |
 | Updated at | Date | |
 | Related Sprint | Relation | Links to synced Jira linked issues |
+| Parent Issue | Relation | Links to the synced Jira parent issue |
+| Subtasks | Relation | Links to synced Jira subtasks |
 | Sprint 기간 | Date | |
 | Jira URL | URL | |
 
@@ -106,10 +108,12 @@ This implementation does not require Jira custom headers. Jira's webhook passwor
 | `issue.fields[JIRA_STORY_POINTS_FIELD]` | `Story point estimate` |
 | `issue.fields.updated` | `Updated at` |
 | `issue.fields.issuelinks[].inwardIssue.key` / `issue.fields.issuelinks[].outwardIssue.key` | `Related Sprint` |
+| `issue.fields.parent.key` | `Parent Issue` |
+| `issue.fields.subtasks[].key` | `Subtasks` |
 | `issue.fields[JIRA_SPRINT_FIELD].startDate/endDate` | `Sprint 기간` |
 | `JIRA_BASE_URL + /browse/<issue.key>` | `Jira URL` |
 
-Unknown Jira labels are ignored. Unknown issue types default to `Task`. Unknown statuses default to `Todo`.
+Jira labels are written as-is. Unknown issue types default to `Task`. Unknown statuses default to `Todo`.
 
 ## Postman Test
 
