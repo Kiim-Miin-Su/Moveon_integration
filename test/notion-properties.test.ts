@@ -47,8 +47,12 @@ test("maps Jira statuses to Notion status options", () => {
   assert.equal(mapStatus("To Do"), "Todo");
   assert.equal(mapStatus("In Progress"), "In Progress");
   assert.equal(mapStatus("Review"), "Test/Review");
+  assert.equal(mapStatus("Test / Review"), "Test/Review");
+  assert.equal(mapStatus("TEST_REVIEW"), "Test/Review");
+  assert.equal(mapStatus("검토"), "Test/Review");
   assert.equal(mapStatus("Closed"), "Done");
-  assert.equal(mapStatus("Backlog"), "Todo");
+  assert.equal(mapStatus("Backlog"), "Backlog");
+  assert.equal(mapStatus(undefined), "Todo");
 });
 
 test("maps known Jira labels and ignores unknown labels", () => {

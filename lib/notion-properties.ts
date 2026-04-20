@@ -21,14 +21,27 @@ type JiraSprint = {
 };
 
 export function mapStatus(status?: string) {
-  const normalized = status?.trim().toLowerCase();
+  const trimmed = status?.trim();
+  const normalized = trimmed?.toLowerCase();
+  const compact = normalized?.replace(/[\s/_-]+/g, "");
 
-  if (normalized === "to do" || normalized === "todo") return "Todo";
-  if (normalized === "in progress") return "In Progress";
-  if (normalized === "test/review" || normalized === "review") return "Test/Review";
-  if (normalized === "done" || normalized === "closed") return "Done";
+  if (compact === "todo") return "Todo";
+  if (compact === "inprogress") return "In Progress";
+  if (
+    compact === "testreview" ||
+    compact === "review" ||
+    compact === "qa" ||
+    compact === "testing" ||
+    normalized?.includes("review") ||
+    normalized?.includes("test") ||
+    normalized?.includes("검토") ||
+    normalized?.includes("테스트")
+  ) {
+    return "Test/Review";
+  }
+  if (compact === "done" || compact === "closed") return "Done";
 
-  return "Todo";
+  return trimmed || "Todo";
 }
 
 export function mapLabel(label: string) {
