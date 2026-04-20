@@ -25,6 +25,13 @@ type JiraSprint = {
   endDate?: string;
 };
 
+function toKSTDateString(dateStr?: string): string | undefined {
+  if (!dateStr) return undefined;
+  const date = new Date(dateStr);
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
 export function normalizePropertyName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -463,8 +470,8 @@ export function buildProperties(
   if (sprint?.startDate) {
     properties["Sprint 기간"] = {
       date: {
-        start: sprint.startDate,
-        end: sprint.endDate,
+        start: toKSTDateString(sprint.startDate)!,
+        end: (issue.fields.duedate ?? toKSTDateString(sprint.endDate)) as string | undefined,
       },
     };
   }
