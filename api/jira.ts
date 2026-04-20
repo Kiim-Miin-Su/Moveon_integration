@@ -485,7 +485,6 @@ async function syncHierarchyRelations(
   propertySchema: NotionPropertySchema
 ) {
   const parentKey = issue.fields.parent?.key;
-  const hasParentIssueRelation = getSchemaType(propertySchema, "Parent Issue") === "relation";
   const hasSubtasksRelation = getSchemaType(propertySchema, "Subtasks") === "relation";
   const subtaskKeys = (issue.fields.subtasks || [])
     .map((subtask) => subtask.key)
@@ -548,29 +547,6 @@ async function syncHierarchyRelations(
         parentKey,
       });
     }
-  }
-
-  if (!hasParentIssueRelation) return;
-
-  for (const subtaskKey of subtaskKeys) {
-    const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
-
-    if (!subtaskPage) {
-      console.warn("Cannot set subtask Parent Issue; subtask page is not synced.", {
-        key: issue.key,
-        subtaskKey,
-      });
-      continue;
-    }
-
-    await updateRelationProperty(subtaskPage.id, propertySchema, "Parent Issue", [currentPageId]);
-    if (hasSubtasksRelation) {
-      await updateRelationProperty(subtaskPage.id, propertySchema, "Subtasks", []);
-    }
-    console.log("Set subtask page Parent Issue relation to current Jira issue.", {
-      key: issue.key,
-      subtaskKey,
-    });
   }
 }
 
