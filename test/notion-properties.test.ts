@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  adaptPropertiesToSchema,
   buildJiraUrl,
   buildProperties,
   getSprint,
@@ -167,4 +168,104 @@ test("builds Notion page properties from a Jira issue", () => {
       },
     },
   });
+});
+
+test("adapts page properties to the Notion data source schema", () => {
+  assert.deepEqual(
+    adaptPropertiesToSchema(buildProperties(issue, { jiraBaseUrl: "https://example.atlassian.net" }), {
+      Labels: { type: "multi_select" },
+      "Sprint Name": { type: "rich_text" },
+      "Jira URL": { type: "url" },
+      "Updated at": { type: "date" },
+      Status: {
+        type: "status",
+        status: {
+          options: [
+            { name: "Todo" },
+            { name: "In progress" },
+            { name: "Test/Review" },
+            { name: "Done" },
+          ],
+        },
+      },
+      "Issue Type": { type: "select" },
+      ID: { type: "unique_id" },
+      Priority: { type: "select" },
+      Summary: { type: "rich_text" },
+      "Jira Key": { type: "rich_text" },
+      담당자: { type: "people" },
+      "Sprint [scrum-xx] : Title": { type: "title" },
+      "Sprint 기간": { type: "date" },
+    }),
+    {
+      "Sprint [scrum-xx] : Title": {
+        title: [
+          {
+            text: {
+              content: "Improve onboarding",
+            },
+          },
+        ],
+      },
+      Summary: {
+        rich_text: [
+          {
+            text: {
+              content: "Improve onboarding",
+            },
+          },
+        ],
+      },
+      "Jira Key": {
+        rich_text: [
+          {
+            text: {
+              content: "MOV-123",
+            },
+          },
+        ],
+      },
+      Status: {
+        status: {
+          name: "In progress",
+        },
+      },
+      Labels: {
+        multi_select: [{ name: "UI/UX" }, { name: "Docs" }, { name: "CI/CD" }],
+      },
+      "Issue Type": {
+        select: {
+          name: "Story",
+        },
+      },
+      "Jira URL": {
+        url: "https://example.atlassian.net/browse/MOV-123",
+      },
+      Priority: {
+        select: {
+          name: "High",
+        },
+      },
+      "Updated at": {
+        date: {
+          start: "2024-01-15T05:30:00.000+0000",
+        },
+      },
+      "Sprint Name": {
+        rich_text: [
+          {
+            text: {
+              content: "Example Sprint",
+            },
+          },
+        ],
+      },
+      "Sprint 기간": {
+        date: {
+          start: "2024-01-15T01:00:00.000Z",
+          end: "2024-01-29T01:00:00.000Z",
+        },
+      },
+    }
+  );
 });

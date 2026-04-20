@@ -2,7 +2,17 @@ import type { CreatePageParameters } from "@notionhq/client/build/src/api-endpoi
 
 import type { JiraIssue } from "./jira-types";
 
-export type NotionProperties = CreatePageParameters["properties"];
+export type NotionProperties = NonNullable<CreatePageParameters["properties"]>;
+type NotionPropertyValue = NotionProperties[string];
+export type NotionPropertySchema = Record<
+  string,
+  {
+    type?: string;
+    status?: {
+      options?: Array<{ name: string }>;
+    };
+  }
+>;
 
 type JiraSprint = {
   name?: string;
@@ -72,6 +82,116 @@ function getTextFromUnknown(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function getTitlePropertyName(schema?: NotionPropertySchema) {
+  return Object.entries(schema || {}).find(([, property]) => property.type === "title")?.[0];
+}
+
+function isReadOnlyProperty(type?: string) {
+  return (
+    type === "button" ||
+    type === "created_by" ||
+    type === "created_time" ||
+    type === "formula" ||
+    type === "last_edited_by" ||
+    type === "last_edited_time" ||
+    type === "rollup" ||
+    type === "unique_id"
+  );
+}
+
+function getPlainText(property: NotionPropertyValue) {
+  const value = property as {
+    title?: Array<{ text?: { content?: string } }>;
+    rich_text?: Array<{ text?: { content?: string } }>;
+  };
+
+  return value.title?.[0]?.text?.content || value.rich_text?.[0]?.text?.content || "";
+}
+
+function textProperty(type: "title" | "rich_text", content: string): NotionPropertyValue {
+  const richText = [
+    {
+      text: {
+        content,
+      },
+    },
+  ];
+
+  if (type === "title") {
+    return {
+      title: richText,
+    };
+  }
+
+  return {
+    rich_text: richText,
+  };
+}
+
+function matchStatusOption(status: string, schema?: NotionPropertySchema[string]) {
+  const options = schema?.status?.options || [];
+  const matched = options.find((option) => option.name.toLowerCase() === status.toLowerCase());
+  if (matched) return matched.name;
+
+  const aliases: Record<string, string[]> = {
+    todo: ["not started", "to do"],
+    "in progress": ["in progress"],
+  };
+  const aliasMatched = options.find((option) =>
+    aliases[status.toLowerCase()]?.includes(option.name.toLowerCase())
+  );
+
+  return aliasMatched?.name || status;
+}
+
+export function adaptPropertiesToSchema(
+  properties: NotionProperties,
+  schema?: NotionPropertySchema
+): NotionProperties {
+  if (!schema) return properties;
+
+  const adapted: NotionProperties = {};
+  const summary = properties.Summary ? getPlainText(properties.Summary) : "";
+  const titleName = getTitlePropertyName(schema);
+
+  if (titleName && !properties[titleName]) {
+    adapted[titleName] = textProperty("title", summary);
+  }
+
+  for (const [name, property] of Object.entries(properties)) {
+    const propertySchema = schema[name];
+
+    if (!propertySchema || isReadOnlyProperty(propertySchema.type)) continue;
+
+    if (propertySchema.type === "title") {
+      adapted[name] = textProperty("title", getPlainText(property));
+      continue;
+    }
+
+    if (propertySchema.type === "rich_text" && ("title" in property || "rich_text" in property)) {
+      adapted[name] = textProperty("rich_text", getPlainText(property));
+      continue;
+    }
+
+    if (propertySchema.type === "status" && "select" in property) {
+      adapted[name] = {
+        status: {
+          name: matchStatusOption(property.select?.name || "", propertySchema),
+        },
+      };
+      continue;
+    }
+
+    if (propertySchema.type === "people" && "rich_text" in property) {
+      continue;
+    }
+
+    adapted[name] = property;
+  }
+
+  return adapted;
+}
+
 function parseSprintString(value: string): JiraSprint {
   const sprint: JiraSprint = {};
 
@@ -124,7 +244,7 @@ export function buildJiraUrl(issue: JiraIssue, jiraBaseUrl?: string) {
 
 export function buildProperties(
   issue: JiraIssue,
-  options: { jiraBaseUrl?: string; sprintField?: string } = {}
+  options: { jiraBaseUrl?: string; sprintField?: string; propertySchema?: NotionPropertySchema } = {}
 ): NotionProperties {
   const summary = issue.fields.summary || issue.key;
   const assignee =
@@ -224,5 +344,5 @@ export function buildProperties(
     };
   }
 
-  return properties;
+  return adaptPropertiesToSchema(properties, options.propertySchema);
 }

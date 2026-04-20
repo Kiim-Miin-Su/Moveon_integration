@@ -2,7 +2,7 @@ import { Client } from "@notionhq/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import type { JiraIssue, JiraWebhookPayload } from "../lib/jira-types";
-import { buildProperties } from "../lib/notion-properties";
+import { buildProperties, type NotionPropertySchema } from "../lib/notion-properties";
 
 const NOTION_TOKEN = getRequiredEnv("NOTION_TOKEN");
 const NOTION_DATA_SOURCE_ID = getRequiredEnv("NOTION_DATASOURCE_ID");
@@ -12,6 +12,8 @@ const JIRA_SPRINT_FIELD = process.env.JIRA_SPRINT_FIELD;
 const notion = new Client({
   auth: NOTION_TOKEN,
 });
+
+let propertySchemaPromise: Promise<NotionPropertySchema> | null = null;
 
 function getRequiredEnv(...names: string[]) {
   for (const name of names) {
@@ -37,6 +39,32 @@ async function findPageByJiraKey(jiraKey: string) {
   return response.results[0];
 }
 
+async function getPropertySchema() {
+  propertySchemaPromise ||= notion.dataSources
+    .retrieve({
+      data_source_id: NOTION_DATA_SOURCE_ID,
+    })
+    .then((dataSource) => {
+      const schema: NotionPropertySchema = {};
+
+      for (const [name, property] of Object.entries(dataSource.properties || {})) {
+        schema[name] = {
+          type: property.type,
+          status:
+            property.type === "status"
+              ? {
+                  options: property.status.options.map((option) => ({ name: option.name })),
+                }
+              : undefined,
+        };
+      }
+
+      return schema;
+    });
+
+  return propertySchemaPromise;
+}
+
 function getIssueFromBody(body: unknown) {
   const payload = body as JiraWebhookPayload | JiraIssue;
 
@@ -60,9 +88,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const existingPage = await findPageByJiraKey(issue.key);
+    const propertySchema = await getPropertySchema();
     const properties = buildProperties(issue, {
       jiraBaseUrl: JIRA_BASE_URL,
       sprintField: JIRA_SPRINT_FIELD,
+      propertySchema,
     });
 
     if (existingPage) {

@@ -45,13 +45,14 @@ Share the Notion data source with the Notion integration, then make sure these p
 
 | Property | Type | Options |
 | --- | --- | --- |
-| Summary | Title | |
-| ID | Rich text | |
+| Sprint [scrum-xx] : Title | Title | |
+| Summary | Rich text | |
+| ID | Unique ID | |
 | Jira Key | Rich text | |
-| Status | Select | `Todo`, `In Progress`, `Test/Review`, `Done` |
+| Status | Status | `Todo`, `In progress`, `Test/Review`, `Done` |
 | Labels | Multi-select | `UI/UX`, `Feature`, `Docs`, `CI/CD` |
 | Issue Type | Select | `Bug`, `Task`, `Story` |
-| 담당자 | Rich text | |
+| 담당자 | People | |
 | Priority | Select | Jira priority names, for example `High`, `Medium`, `Low` |
 | Updated at | Date | |
 | Sprint Name | Rich text | |
@@ -59,7 +60,7 @@ Share the Notion data source with the Notion integration, then make sure these p
 | Jira URL | URL | |
 
 The sync uses `Jira Key` to find existing pages. If a page already exists, it updates that page. If not, it creates a new page.
-Properties such as `Created time`, `Related Sprint`, `GitHub Pull Request`, `Blocked by`, `Blocking`, and `Related Docs` are not written by this webhook yet.
+Properties such as `ID`, `담당자`, `Created time`, `Related Sprint`, `GitHub Pull Request`, `Blocked by`, `Blocking`, and `Related Docs` are not written by this webhook yet. `ID` is a Notion-generated unique ID, and Jira assignees cannot be written to a People property unless they are mapped to Notion user IDs.
 
 ## Jira Webhook Setup
 
@@ -92,11 +93,10 @@ This implementation does not require Jira custom headers. Jira's webhook passwor
 | --- | --- |
 | `issue.id` | `ID` |
 | `issue.key` | `Jira Key` |
-| `issue.fields.summary` | `Summary` |
+| `issue.fields.summary` | `Sprint [scrum-xx] : Title`, `Summary` |
 | `issue.fields.status.name` | `Status` |
 | `issue.fields.labels` | `Labels` |
 | `issue.fields.issuetype.name` | `Issue Type` |
-| `issue.fields.assignee.displayName` | `담당자` |
 | `issue.fields.priority.name` | `Priority` |
 | `issue.fields.updated` | `Updated at` |
 | `issue.fields[JIRA_SPRINT_FIELD].name` | `Sprint Name` |
