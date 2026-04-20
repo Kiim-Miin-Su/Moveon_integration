@@ -41,9 +41,14 @@ function getRequiredEnv(...names: string[]) {
 }
 
 async function findPageByJiraKey(jiraKey: string) {
+  const pages = await findPagesByJiraKey(jiraKey);
+  return pages[0];
+}
+
+async function findPagesByJiraKey(jiraKey: string) {
   const response = await notion.dataSources.query({
     data_source_id: NOTION_DATA_SOURCE_ID,
-    page_size: 1,
+    page_size: 10,
     filter: {
       property: "Jira Key",
       rich_text: {
@@ -52,7 +57,14 @@ async function findPageByJiraKey(jiraKey: string) {
     },
   });
 
-  return response.results[0];
+  if (response.results.length > 1) {
+    console.warn("Multiple Notion pages found for one Jira Key; using the first page.", {
+      key: jiraKey,
+      pageIds: response.results.map((page) => page.id),
+    });
+  }
+
+  return response.results;
 }
 
 async function getPropertySchema() {
@@ -343,25 +355,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (isIssueDeletedEvent(payload)) {
-      const existingPage = await findPageByJiraKey(issue.key);
+      const existingPages = await findPagesByJiraKey(issue.key);
 
-      if (!existingPage) {
+      if (existingPages.length === 0) {
         console.warn("Jira issue deleted, but no matching Notion page was found.", {
           key: issue.key,
         });
         return res.status(200).json({ ok: true, action: "delete_ignored", key: issue.key });
       }
 
-      await notion.pages.update({
-        page_id: existingPage.id,
-        archived: true,
-      });
+      await Promise.all(
+        existingPages.map((page) =>
+          notion.pages.update({
+            page_id: page.id,
+            archived: true,
+          })
+        )
+      );
 
-      console.log("Archived Notion page for deleted Jira issue:", issue.key);
-      return res.status(200).json({ ok: true, action: "archived", key: issue.key });
+      console.log("Archived Notion pages for deleted Jira issue:", {
+        key: issue.key,
+        count: existingPages.length,
+        pageIds: existingPages.map((page) => page.id),
+      });
+      return res.status(200).json({
+        ok: true,
+        action: "archived",
+        key: issue.key,
+        count: existingPages.length,
+      });
     }
 
-    const existingPage = await findPageByJiraKey(issue.key);
+    const existingPages = await findPagesByJiraKey(issue.key);
+    const existingPage = existingPages[0];
     const propertySchema = await getPropertySchema();
     const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
     const relatedSprintPageId = await getRelatedSprintPageId(issue, propertySchema);
@@ -382,8 +408,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         properties,
       });
 
+      if (existingPages.length > 1) {
+        await Promise.all(
+          existingPages.slice(1).map((page) =>
+            notion.pages.update({
+              page_id: page.id,
+              archived: true,
+            })
+          )
+        );
+
+        console.warn("Archived duplicate Notion pages after updating canonical Jira Key page.", {
+          key: issue.key,
+          canonicalPageId: existingPage.id,
+          archivedPageIds: existingPages.slice(1).map((page) => page.id),
+        });
+      }
+
       console.log("Updated Jira issue in Notion:", issue.key);
       return res.status(200).json({ ok: true, action: "updated", key: issue.key });
+    }
+
+    const pagesBeforeCreate = await findPagesByJiraKey(issue.key);
+    const pageBeforeCreate = pagesBeforeCreate[0];
+
+    if (pageBeforeCreate) {
+      await notion.pages.update({
+        page_id: pageBeforeCreate.id,
+        properties,
+      });
+
+      if (pagesBeforeCreate.length > 1) {
+        await Promise.all(
+          pagesBeforeCreate.slice(1).map((page) =>
+            notion.pages.update({
+              page_id: page.id,
+              archived: true,
+            })
+          )
+        );
+      }
+
+      console.warn("Skipped duplicate Notion create after rechecking Jira Key; updated existing page.", {
+        key: issue.key,
+        pageId: pageBeforeCreate.id,
+        duplicatePageIds: pagesBeforeCreate.slice(1).map((page) => page.id),
+      });
+      return res.status(200).json({ ok: true, action: "updated_after_recheck", key: issue.key });
     }
 
     await notion.pages.create({
