@@ -273,3 +273,22 @@ test("adapts page properties to the Notion data source schema", () => {
     }
   );
 });
+
+test("writes assignee as people when a matching Notion user is provided", () => {
+  assert.deepEqual(
+    buildProperties(issue, {
+      jiraBaseUrl: "https://example.atlassian.net",
+      assigneeNotionUserId: "notion-user-id",
+      propertySchema: {
+        담당자: { type: "people" },
+      },
+    }).담당자,
+    {
+      people: [
+        {
+          id: "notion-user-id",
+        },
+      ],
+    }
+  );
+});

@@ -257,7 +257,12 @@ export function buildJiraUrl(issue: JiraIssue, jiraBaseUrl?: string) {
 
 export function buildProperties(
   issue: JiraIssue,
-  options: { jiraBaseUrl?: string; sprintField?: string; propertySchema?: NotionPropertySchema } = {}
+  options: {
+    jiraBaseUrl?: string;
+    sprintField?: string;
+    propertySchema?: NotionPropertySchema;
+    assigneeNotionUserId?: string;
+  } = {}
 ): NotionProperties {
   const summary = issue.fields.summary || issue.key;
   const assignee =
@@ -307,15 +312,24 @@ export function buildProperties(
         name: mapIssueType(issue.fields.issuetype?.name),
       },
     },
-    담당자: {
-      rich_text: [
-        {
-          text: {
-            content: assignee,
+    담당자:
+      options.propertySchema?.["담당자"]?.type === "people" && options.assigneeNotionUserId
+        ? {
+            people: [
+              {
+                id: options.assigneeNotionUserId,
+              },
+            ],
+          }
+        : {
+            rich_text: [
+              {
+                text: {
+                  content: assignee,
+                },
+              },
+            ],
           },
-        },
-      ],
-    },
     "Jira URL": {
       url: jiraUrl,
     },
