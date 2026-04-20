@@ -370,6 +370,19 @@ function isIssueDeletedEvent(payload: JiraWebhookPayload | JiraIssue) {
   );
 }
 
+function hasWebhookEvent(payload: JiraWebhookPayload | JiraIssue) {
+  return "webhookEvent" in payload || "issue_event_type_name" in payload;
+}
+
+function isIssueCreatedEvent(payload: JiraWebhookPayload | JiraIssue) {
+  return (
+    !hasWebhookEvent(payload) ||
+    ("webhookEvent" in payload &&
+      (payload.webhookEvent === "jira:issue_created" ||
+        payload.issue_event_type_name === "issue_created"))
+  );
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") {
@@ -485,6 +498,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         duplicatePageIds: pagesBeforeCreate.slice(1).map((page) => page.id),
       });
       return res.status(200).json({ ok: true, action: "updated_after_recheck", key: issue.key });
+    }
+
+    if (!isIssueCreatedEvent(payload)) {
+      console.warn("Skipped Notion create for non-created Jira event without existing page.", {
+        key: issue.key,
+        webhookEvent: "webhookEvent" in payload ? payload.webhookEvent : undefined,
+        issueEventTypeName:
+          "issue_event_type_name" in payload ? payload.issue_event_type_name : undefined,
+      });
+      return res.status(200).json({
+        ok: true,
+        action: "create_skipped_for_non_created_event",
+        key: issue.key,
+      });
     }
 
     await notion.pages.create({
