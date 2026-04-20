@@ -86,6 +86,7 @@ Issue created
 Issue updated
 Issue transitioned
 Issue assigned
+Issue deleted
 ```
 
 This implementation does not require Jira custom headers. Jira's webhook password/basic auth setting is not used by the current code.

@@ -4,6 +4,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { JiraIssue, JiraWebhookPayload } from "../lib/jira-types";
 import {
   buildProperties,
+  getSchemaEntry,
   getSprint,
   getStoryPoints,
   type NotionPropertySchema,
@@ -132,7 +133,7 @@ function maskEmail(email?: string) {
 }
 
 async function getAssigneeNotionUserId(issue: JiraIssue, propertySchema: NotionPropertySchema) {
-  if (propertySchema["담당자"]?.type !== "people") return undefined;
+  if (getSchemaEntry(propertySchema, "담당자")?.property.type !== "people") return undefined;
 
   const email = issue.fields.assignee?.emailAddress?.toLowerCase();
 
@@ -191,10 +192,13 @@ function getCustomFieldPreview(issue: JiraIssue) {
 }
 
 async function getRelatedSprintPageId(issue: JiraIssue, propertySchema: NotionPropertySchema) {
-  if (propertySchema["Related Sprint"]?.type !== "relation") {
+  const relatedSprintProperty = getSchemaEntry(propertySchema, "Related Sprint");
+
+  if (relatedSprintProperty?.property.type !== "relation") {
     console.warn("Notion property Related Sprint is missing or not a relation; skipping relation.", {
       key: issue.key,
-      notionType: propertySchema["Related Sprint"]?.type || "missing_property",
+      notionType: relatedSprintProperty?.property.type || "missing_property",
+      availableProperties: Object.keys(propertySchema),
     });
     return undefined;
   }
@@ -278,8 +282,12 @@ function logSyncDiagnostics(
   const diagnostics = checks.map(({ property, source }) => ({
     property,
     source,
-    notionType: propertySchema[property]?.type || "missing_property",
-    payloadType: getPayloadType(properties[property]) || "omitted",
+    actualProperty: getSchemaEntry(propertySchema, property)?.name || null,
+    notionType: getSchemaEntry(propertySchema, property)?.property.type || "missing_property",
+    payloadType:
+      getPayloadType(properties[getSchemaEntry(propertySchema, property)?.name || property]) ||
+      getPayloadType(properties[property]) ||
+      "omitted",
   }));
 
   console.log("Jira to Notion sync diagnostics:", {
@@ -308,6 +316,18 @@ function getIssueFromBody(body: unknown) {
   return null;
 }
 
+function getWebhookPayload(body: unknown) {
+  return body as JiraWebhookPayload | JiraIssue;
+}
+
+function isIssueDeletedEvent(payload: JiraWebhookPayload | JiraIssue) {
+  return (
+    "webhookEvent" in payload &&
+    (payload.webhookEvent === "jira:issue_deleted" ||
+      payload.issue_event_type_name === "issue_deleted")
+  );
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") {
@@ -315,10 +335,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(405).json({ ok: false, error: "Method Not Allowed" });
     }
 
-    const issue = getIssueFromBody(req.body);
+    const payload = getWebhookPayload(req.body);
+    const issue = getIssueFromBody(payload);
 
     if (!issue?.key) {
       return res.status(200).json({ ok: true, ignored: true });
+    }
+
+    if (isIssueDeletedEvent(payload)) {
+      const existingPage = await findPageByJiraKey(issue.key);
+
+      if (!existingPage) {
+        console.warn("Jira issue deleted, but no matching Notion page was found.", {
+          key: issue.key,
+        });
+        return res.status(200).json({ ok: true, action: "delete_ignored", key: issue.key });
+      }
+
+      await notion.pages.update({
+        page_id: existingPage.id,
+        archived: true,
+      });
+
+      console.log("Archived Notion page for deleted Jira issue:", issue.key);
+      return res.status(200).json({ ok: true, action: "archived", key: issue.key });
     }
 
     const existingPage = await findPageByJiraKey(issue.key);

@@ -17,12 +17,33 @@ export type NotionPropertySchema = Record<
     };
   }
 >;
+type NotionPropertySchemaEntry = NonNullable<NotionPropertySchema[string]>;
 
 type JiraSprint = {
   name?: string;
   startDate?: string;
   endDate?: string;
 };
+
+export function normalizePropertyName(name: string) {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function getSchemaEntry(schema: NotionPropertySchema | undefined, name: string) {
+  if (!schema) return undefined;
+
+  const normalizedName = normalizePropertyName(name);
+  const [actualName, property] =
+    Object.entries(schema).find(
+      ([schemaName]) => normalizePropertyName(schemaName) === normalizedName
+    ) || [];
+
+  return actualName && property ? { name: actualName, property } : undefined;
+}
+
+function getSchemaProperty(schema: NotionPropertySchema | undefined, name: string) {
+  return getSchemaEntry(schema, name)?.property;
+}
 
 export function mapStatus(status?: string) {
   const trimmed = status?.trim();
@@ -190,7 +211,7 @@ function textProperty(type: "title" | "rich_text", content: string): NotionPrope
   };
 }
 
-function matchStatusOption(status: string, schema?: NotionPropertySchema[string]) {
+function matchStatusOption(status: string, schema?: NotionPropertySchemaEntry) {
   const options = schema?.status?.options || [];
   const matched = options.find((option) => option.name.toLowerCase() === status.toLowerCase());
   if (matched) return matched.name;
@@ -221,22 +242,24 @@ export function adaptPropertiesToSchema(
   }
 
   for (const [name, property] of Object.entries(properties)) {
-    const propertySchema = schema[name];
+    const schemaEntry = getSchemaEntry(schema, name);
+    const propertyName = schemaEntry?.name || name;
+    const propertySchema = schemaEntry?.property;
 
     if (!propertySchema || isReadOnlyProperty(propertySchema.type)) continue;
 
     if (propertySchema.type === "title") {
-      adapted[name] = textProperty("title", getPlainText(property));
+      adapted[propertyName] = textProperty("title", getPlainText(property));
       continue;
     }
 
     if (propertySchema.type === "rich_text" && ("title" in property || "rich_text" in property)) {
-      adapted[name] = textProperty("rich_text", getPlainText(property));
+      adapted[propertyName] = textProperty("rich_text", getPlainText(property));
       continue;
     }
 
     if (propertySchema.type === "status" && "select" in property) {
-      adapted[name] = {
+      adapted[propertyName] = {
         status: {
           name: matchStatusOption(property.select?.name || "", propertySchema),
         },
@@ -248,7 +271,7 @@ export function adaptPropertiesToSchema(
       continue;
     }
 
-    adapted[name] = property;
+    adapted[propertyName] = property;
   }
 
   return adapted;
@@ -370,7 +393,8 @@ export function buildProperties(
       },
     },
     담당자:
-      options.propertySchema?.["담당자"]?.type === "people" && options.assigneeNotionUserId
+      getSchemaProperty(options.propertySchema, "담당자")?.type === "people" &&
+      options.assigneeNotionUserId
         ? {
             people: [
               {
@@ -410,7 +434,10 @@ export function buildProperties(
     };
   }
 
-  if (options.propertySchema?.["Related Sprint"]?.type === "relation" && options.relatedSprintPageId) {
+  if (
+    getSchemaProperty(options.propertySchema, "Related Sprint")?.type === "relation" &&
+    options.relatedSprintPageId
+  ) {
     properties["Related Sprint"] = {
       relation: [
         {
