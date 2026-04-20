@@ -203,7 +203,27 @@ function getCustomFieldPreview(issue: JiraIssue) {
     }));
 }
 
-async function getRelatedSprintPageId(issue: JiraIssue, propertySchema: NotionPropertySchema) {
+function getLinkedIssueKeys(issue: JiraIssue) {
+  return [
+    ...new Set(
+      (issue.fields.issuelinks || [])
+        .flatMap((link) => [link.inwardIssue?.key, link.outwardIssue?.key])
+        .filter((key): key is string => Boolean(key))
+    ),
+  ];
+}
+
+function getIssueLinkPreview(issue: JiraIssue) {
+  return (issue.fields.issuelinks || []).map((link) => ({
+    type: link.type?.name || null,
+    inward: link.type?.inward || null,
+    outward: link.type?.outward || null,
+    inwardKey: link.inwardIssue?.key || null,
+    outwardKey: link.outwardIssue?.key || null,
+  }));
+}
+
+async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionPropertySchema) {
   const relatedSprintProperty = getSchemaEntry(propertySchema, "Related Sprint");
 
   if (relatedSprintProperty?.property.type !== "relation") {
@@ -215,36 +235,46 @@ async function getRelatedSprintPageId(issue: JiraIssue, propertySchema: NotionPr
     return undefined;
   }
 
-  const relatedIssueKeys = [
-    issue.fields.parent?.key,
-    ...(issue.fields.subtasks || []).map((subtask) => subtask.key),
-  ].filter((key): key is string => Boolean(key));
+  const relatedIssueKeys = getLinkedIssueKeys(issue);
 
   if (relatedIssueKeys.length === 0) {
-    console.warn("Jira issue has no parent or subtasks; cannot map Related Sprint relation.", {
+    console.warn("Jira issue has no linked issue keys; cannot map Related Sprint relation.", {
       key: issue.key,
     });
     return undefined;
   }
 
+  const relatedPageIds: string[] = [];
+
   for (const relatedIssueKey of relatedIssueKeys) {
     const relatedPage = await findPageByJiraKey(relatedIssueKey);
 
     if (relatedPage) {
-      console.log("Mapped Jira hierarchy to Related Sprint page.", {
+      relatedPageIds.push(relatedPage.id);
+      console.log("Mapped Jira linked issue to Related Sprint page.", {
         key: issue.key,
         relatedIssueKey,
-        source: relatedIssueKey === issue.fields.parent?.key ? "parent" : "subtask",
       });
-      return relatedPage.id;
     }
   }
 
-  console.warn("No synced Notion page found for Jira parent/subtasks; skipping Related Sprint.", {
-    key: issue.key,
-    relatedIssueKeys,
-  });
-  return undefined;
+  if (relatedPageIds.length === 0) {
+    console.warn("No synced Notion page found for Jira linked issues; skipping Related Sprint.", {
+      key: issue.key,
+      relatedIssueKeys,
+    });
+    return undefined;
+  }
+
+  if (relatedPageIds.length < relatedIssueKeys.length) {
+    console.warn("Some Jira linked issues are not synced to Notion yet.", {
+      key: issue.key,
+      relatedIssueKeys,
+      relatedPageCount: relatedPageIds.length,
+    });
+  }
+
+  return relatedPageIds;
 }
 
 function getPayloadType(value: unknown) {
@@ -286,7 +316,7 @@ function logSyncDiagnostics(
     { property: "Priority", source: "issue.fields.priority.name" },
     { property: "Story point estimate", source: JIRA_STORY_POINTS_FIELD },
     { property: "Updated at", source: "issue.fields.updated" },
-    { property: "Related Sprint", source: "issue.fields.parent.key / issue.fields.subtasks[].key" },
+    { property: "Related Sprint", source: "issue.fields.issuelinks[].inwardIssue/outwardIssue.key" },
     { property: "Sprint 기간", source: JIRA_SPRINT_FIELD || "customfield_10020" },
     { property: "Jira URL", source: "JIRA_BASE_URL/self" },
   ];
@@ -310,8 +340,8 @@ function logSyncDiagnostics(
     storyPoints: getStoryPoints(issue, JIRA_STORY_POINTS_FIELD),
     sprintField: JIRA_SPRINT_FIELD || "customfield_10020",
     sprintName: getSprint(issue, JIRA_SPRINT_FIELD)?.name || null,
-    parentKey: issue.fields.parent?.key || null,
-    subtaskKeys: (issue.fields.subtasks || []).map((subtask) => subtask.key).filter(Boolean),
+    linkedIssueKeys: getLinkedIssueKeys(issue),
+    issueLinks: getIssueLinkPreview(issue),
     hasAssignee: Boolean(issue.fields.assignee),
     assigneeHasEmail: Boolean(issue.fields.assignee?.emailAddress),
     customFields: getCustomFieldPreview(issue),
@@ -390,14 +420,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const existingPage = existingPages[0];
     const propertySchema = await getPropertySchema();
     const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
-    const relatedSprintPageId = await getRelatedSprintPageId(issue, propertySchema);
+    const relatedSprintPageIds = await getRelatedSprintPageIds(issue, propertySchema);
     const properties = buildProperties(issue, {
       jiraBaseUrl: JIRA_BASE_URL,
       sprintField: JIRA_SPRINT_FIELD,
       storyPointsField: JIRA_STORY_POINTS_FIELD,
       propertySchema,
       assigneeNotionUserId,
-      relatedSprintPageId,
+      relatedSprintPageIds,
     });
 
     logSyncDiagnostics(issue, propertySchema, properties);

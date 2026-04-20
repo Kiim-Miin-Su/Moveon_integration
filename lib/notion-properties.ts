@@ -338,7 +338,7 @@ export function buildProperties(
     sprintField?: string;
     propertySchema?: NotionPropertySchema;
     assigneeNotionUserId?: string;
-    relatedSprintPageId?: string;
+    relatedSprintPageIds?: string[];
     storyPointsField?: string;
   } = {}
 ): NotionProperties {
@@ -436,14 +436,10 @@ export function buildProperties(
 
   if (
     getSchemaProperty(options.propertySchema, "Related Sprint")?.type === "relation" &&
-    options.relatedSprintPageId
+    options.relatedSprintPageIds?.length
   ) {
     properties["Related Sprint"] = {
-      relation: [
-        {
-          id: options.relatedSprintPageId,
-        },
-      ],
+      relation: options.relatedSprintPageIds.map((id) => ({ id })),
     };
   }
 

@@ -55,9 +55,17 @@ const issue: JiraIssue = {
       },
     ],
     customfield_10016: 3,
-    parent: {
-      key: "TMO-1",
-    },
+    issuelinks: [
+      {
+        outwardIssue: {
+          key: "TMO-1",
+        },
+        type: {
+          name: "Relates",
+          outward: "relates to",
+        },
+      },
+    ],
   },
 };
 
@@ -312,7 +320,7 @@ test("writes assignee as people when a matching Notion user is provided", () => 
 test("writes Related Sprint as relation when a related page is provided", () => {
   assert.deepEqual(
     buildProperties(issue, {
-      relatedSprintPageId: "related-page-id",
+      relatedSprintPageIds: ["related-page-id"],
       propertySchema: {
         "Related Sprint": { type: "relation" },
       },

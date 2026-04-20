@@ -21,11 +21,18 @@ export type JiraIssue = {
     priority?: {
       name?: string;
     } | null;
-    parent?: {
-      key?: string;
-    };
-    subtasks?: Array<{
-      key?: string;
+    issuelinks?: Array<{
+      inwardIssue?: {
+        key?: string;
+      };
+      outwardIssue?: {
+        key?: string;
+      };
+      type?: {
+        name?: string;
+        inward?: string;
+        outward?: string;
+      };
     }>;
     [field: string]: unknown;
   };
