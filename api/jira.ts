@@ -54,31 +54,6 @@ function getRequiredEnv(...names: string[]) {
   throw new Error(`Missing required environment variable: ${names.join(" or ")}`);
 }
 
-function getSchemaType(propertySchema: NotionPropertySchema, propertyName: string) {
-  return getSchemaEntry(propertySchema, propertyName)?.property.type;
-}
-
-function areSyncedRelationPair(
-  propertySchema: NotionPropertySchema,
-  propertyName: string,
-  syncedPropertyName: string
-) {
-  const property = getSchemaEntry(propertySchema, propertyName)?.property;
-  const syncedProperty = getSchemaEntry(propertySchema, syncedPropertyName);
-
-  return (
-    property?.type === "relation" &&
-    property.relation?.type === "dual_property" &&
-    syncedProperty &&
-    normalizeComparablePropertyName(property.relation.synced_property_name || "") ===
-      normalizeComparablePropertyName(syncedProperty.name)
-  );
-}
-
-function normalizeComparablePropertyName(name: string) {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function logSchemaCompatibility(propertySchema: NotionPropertySchema) {
   const expectedProperties = [
     { name: "Title", expectedType: "title", required: true },
@@ -92,8 +67,6 @@ function logSchemaCompatibility(propertySchema: NotionPropertySchema) {
     { name: "Story point estimate", expectedType: "number" },
     { name: "Updated at", expectedType: "date" },
     { name: "Related Sprint", expectedType: "relation" },
-    { name: "Parent Issue", expectedType: "relation" },
-    { name: "Subtasks", expectedType: "relation" },
     { name: "Sprint 기간", expectedType: "date" },
     { name: "Jira URL", expectedType: "url" },
   ];
@@ -215,33 +188,17 @@ async function getPropertySchema() {
       const schema: NotionPropertySchema = {};
 
       for (const [name, property] of Object.entries(dataSource.properties || {})) {
-        const relation =
-          property.type === "relation"
-            ? (property.relation as {
-                type?: string;
-                data_source_id?: string;
-                database_id?: string;
-                dual_property?: {
-                  synced_property_id?: string;
-                  synced_property_name?: string;
-                };
-              })
-            : undefined;
-
         schema[name] = {
           type: property.type,
           relation:
-            relation
+            property.type === "relation"
               ? {
                   data_source_id:
-                    "data_source_id" in relation
-                      ? relation.data_source_id
+                    "data_source_id" in property.relation
+                      ? property.relation.data_source_id
                       : undefined,
                   database_id:
-                    "database_id" in relation ? relation.database_id : undefined,
-                  type: relation.type,
-                  synced_property_id: relation.dual_property?.synced_property_id,
-                  synced_property_name: relation.dual_property?.synced_property_name,
+                    "database_id" in property.relation ? property.relation.database_id : undefined,
                 }
               : undefined,
           status:
@@ -376,6 +333,18 @@ function getSubtaskKeys(issue: JiraIssue) {
     .filter((key): key is string => Boolean(key));
 }
 
+function getRelatedSprintCandidateKeys(issue: JiraIssue) {
+  return [
+    ...new Set(
+      [
+        ...getLinkedIssueKeys(issue),
+        issue.fields.parent?.key,
+        ...getSubtaskKeys(issue),
+      ].filter((key): key is string => Boolean(key) && key !== issue.key)
+    ),
+  ];
+}
+
 function getIssueLinkPreview(issue: JiraIssue) {
   return (issue.fields.issuelinks || []).map((link) => ({
     type: link.type?.name || null,
@@ -398,12 +367,15 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
     return undefined;
   }
 
-  const relatedIssueKeys = getLinkedIssueKeys(issue);
+  const relatedIssueKeys = getRelatedSprintCandidateKeys(issue);
 
   if (relatedIssueKeys.length === 0) {
-    console.log("Jira issue has no linked issue keys; Related Sprint will be cleared if present.", {
+    console.log(
+      "Jira issue has no related issue keys (parent/subtasks/links); Related Sprint will be cleared if present.",
+      {
       key: issue.key,
-    });
+      }
+    );
     return undefined;
   }
 
@@ -414,7 +386,7 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
 
     if (relatedPage) {
       relatedPageIds.push(relatedPage.id);
-      console.log("Mapped Jira linked issue to Related Sprint page.", {
+      console.log("Mapped Jira related issue (parent/subtask/link) to Related Sprint page.", {
         key: issue.key,
         relatedIssueKey,
       });
@@ -422,15 +394,18 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
   }
 
   if (relatedPageIds.length === 0) {
-    console.warn("No synced Notion page found for Jira linked issues; skipping Related Sprint.", {
+    console.warn(
+      "No synced Notion page found for Jira related issues (parent/subtasks/links); skipping Related Sprint.",
+      {
       key: issue.key,
       relatedIssueKeys,
-    });
+      }
+    );
     return undefined;
   }
 
   if (relatedPageIds.length < relatedIssueKeys.length) {
-    console.warn("Some Jira linked issues are not synced to Notion yet.", {
+    console.warn("Some Jira related issues (parent/subtasks/links) are not synced to Notion yet.", {
       key: issue.key,
       relatedIssueKeys,
       relatedPageCount: relatedPageIds.length,
@@ -438,54 +413,6 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
   }
 
   return relatedPageIds;
-}
-
-async function findPageIdByJiraKey(jiraKey: string, propertySchema: NotionPropertySchema) {
-  return (await findPageByJiraKey(jiraKey, propertySchema))?.id;
-}
-
-async function getParentIssuePageId(issue: JiraIssue, propertySchema: NotionPropertySchema) {
-  const parentIssueProperty = getSchemaEntry(propertySchema, "Parent Issue");
-
-  if (parentIssueProperty?.property.type !== "relation") return undefined;
-
-  const parentKey = issue.fields.parent?.key;
-  if (!parentKey) return undefined;
-
-  const parentPageId = await findPageIdByJiraKey(parentKey, propertySchema);
-
-  if (!parentPageId) {
-    console.warn("No synced Notion page found for Jira parent issue.", {
-      key: issue.key,
-      parentKey,
-    });
-    return undefined;
-  }
-
-  return parentPageId;
-}
-
-async function getSubtaskPageIds(issue: JiraIssue, propertySchema: NotionPropertySchema) {
-  if (getSchemaType(propertySchema, "Subtasks") !== "relation") return undefined;
-
-  const subtaskKeys = getSubtaskKeys(issue);
-  const subtaskPageIds: string[] = [];
-
-  for (const subtaskKey of subtaskKeys) {
-    const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
-
-    if (!subtaskPage) {
-      console.warn("No synced Notion page found for Jira subtask.", {
-        key: issue.key,
-        subtaskKey,
-      });
-      continue;
-    }
-
-    subtaskPageIds.push(subtaskPage.id);
-  }
-
-  return subtaskPageIds;
 }
 
 function getPayloadType(value: unknown) {
@@ -505,108 +432,6 @@ function getPayloadType(value: unknown) {
       "checkbox",
     ].includes(key)
   );
-}
-
-function getPageRelationIds(
-  page: unknown,
-  propertySchema: NotionPropertySchema,
-  propertyName: string
-) {
-  const actualPropertyName = getSchemaEntry(propertySchema, propertyName)?.name || propertyName;
-  const properties = (page as { properties?: Record<string, unknown> }).properties || {};
-  const property = properties[actualPropertyName] as
-    | { type?: string; relation?: Array<{ id?: string }> }
-    | undefined;
-
-  return property?.type === "relation"
-    ? (property.relation || []).map((relation) => relation.id).filter((id): id is string => Boolean(id))
-    : [];
-}
-
-async function updateRelationProperty(
-  pageId: string,
-  propertySchema: NotionPropertySchema,
-  propertyName: string,
-  pageIds: string[]
-) {
-  const schemaEntry = getSchemaEntry(propertySchema, propertyName);
-
-  if (schemaEntry?.property.type !== "relation") return;
-
-  const uniquePageIds = [...new Set(pageIds)];
-
-  await notion.pages.update({
-    page_id: pageId,
-    properties: {
-      [schemaEntry.name]: {
-        relation: uniquePageIds.map((id) => ({ id })),
-      },
-    },
-  });
-}
-
-async function cleanupHierarchyRelationsOnDelete(
-  issue: JiraIssue,
-  deletedPageIds: string[],
-  propertySchema: NotionPropertySchema
-) {
-  const parentKey = issue.fields.parent?.key;
-  const hasSyncedParentSubtasksRelation =
-    areSyncedRelationPair(propertySchema, "Parent Issue", "Subtasks") ||
-    areSyncedRelationPair(propertySchema, "Subtasks", "Parent Issue");
-
-  if (hasSyncedParentSubtasksRelation && getSchemaType(propertySchema, "Parent Issue") === "relation") {
-    for (const deletedPageId of deletedPageIds) {
-      await updateRelationProperty(deletedPageId, propertySchema, "Parent Issue", []);
-    }
-
-    for (const subtaskKey of getSubtaskKeys(issue)) {
-      const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
-
-      if (!subtaskPage) continue;
-
-      await updateRelationProperty(subtaskPage.id, propertySchema, "Parent Issue", []);
-      console.log("Cleared Parent Issue from subtask after parent Jira issue deletion.", {
-        key: issue.key,
-        subtaskKey,
-      });
-    }
-
-    return;
-  }
-
-  if (parentKey && getSchemaType(propertySchema, "Subtasks") === "relation") {
-    const parentPage = await findPageByJiraKey(parentKey, propertySchema);
-
-    if (parentPage) {
-      await updateRelationProperty(
-        parentPage.id,
-        propertySchema,
-        "Subtasks",
-        getPageRelationIds(parentPage, propertySchema, "Subtasks").filter(
-          (pageId) => !deletedPageIds.includes(pageId)
-        )
-      );
-      console.log("Removed deleted Jira issue from parent page Subtasks relation.", {
-        key: issue.key,
-        parentKey,
-      });
-    }
-  }
-
-  if (getSchemaType(propertySchema, "Parent Issue") !== "relation") return;
-
-  for (const subtaskKey of getSubtaskKeys(issue)) {
-    const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
-
-    if (!subtaskPage) continue;
-
-    await updateRelationProperty(subtaskPage.id, propertySchema, "Parent Issue", []);
-    console.log("Cleared Parent Issue from subtask after parent Jira issue deletion.", {
-      key: issue.key,
-      subtaskKey,
-    });
-  }
 }
 
 function getStatusName(value: unknown) {
@@ -630,9 +455,11 @@ function logSyncDiagnostics(
     { property: "Priority", source: "issue.fields.priority.name" },
     { property: "Story point estimate", source: JIRA_STORY_POINTS_FIELD },
     { property: "Updated at", source: "issue.fields.updated" },
-    { property: "Related Sprint", source: "issue.fields.issuelinks[].inwardIssue/outwardIssue.key" },
-    { property: "Parent Issue", source: "issue.fields.parent.key" },
-    { property: "Subtasks", source: "issue.fields.subtasks[].key" },
+    {
+      property: "Related Sprint",
+      source:
+        "issue.fields.parent.key + issue.fields.subtasks[].key + issue.fields.issuelinks[].inwardIssue/outwardIssue.key",
+    },
     { property: "Sprint 기간", source: JIRA_SPRINT_FIELD || "customfield_10020" },
     { property: "Jira URL", source: "JIRA_BASE_URL/self" },
   ];
@@ -657,6 +484,7 @@ function logSyncDiagnostics(
     sprintField: JIRA_SPRINT_FIELD || "customfield_10020",
     sprintName: getSprint(issue, JIRA_SPRINT_FIELD)?.name || null,
     linkedIssueKeys: getLinkedIssueKeys(issue),
+    relatedSprintCandidateKeys: getRelatedSprintCandidateKeys(issue),
     issueLinks: getIssueLinkPreview(issue),
     parentKey: issue.fields.parent?.key || null,
     subtaskKeys: (issue.fields.subtasks || []).map((subtask) => subtask.key).filter(Boolean),
@@ -743,8 +571,6 @@ function isIssueCreatedEvent(payload: JiraWebhookPayload | JiraIssue) {
 async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionPropertySchema) {
   const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
   const relatedSprintPageIds = await getRelatedSprintPageIds(issue, propertySchema);
-  const parentIssuePageId = await getParentIssuePageId(issue, propertySchema);
-  const subtaskPageIds = await getSubtaskPageIds(issue, propertySchema);
 
   const properties = buildProperties(issue, {
     jiraBaseUrl: JIRA_BASE_URL,
@@ -753,11 +579,7 @@ async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionProp
     propertySchema,
     assigneeNotionUserId,
     relatedSprintPageIds,
-    hasLinkedIssues: getLinkedIssueKeys(issue).length > 0,
-    parentIssuePageId,
-    hasParentIssue: Boolean(parentIssuePageId),
-    subtaskPageIds,
-    hasSubtasks: getSubtaskKeys(issue).length > 0,
+    hasLinkedIssues: getRelatedSprintCandidateKeys(issue).length > 0,
   });
 
   logSyncDiagnostics(issue, propertySchema, properties);
@@ -801,12 +623,6 @@ async function syncDeletedIssue(
     });
     return { action: "delete_ignored", key: issue.key };
   }
-
-  await cleanupHierarchyRelationsOnDelete(
-    issue,
-    existingPages.map((page) => page.id),
-    propertySchema
-  );
 
   await Promise.all(
     existingPages.map((page) =>

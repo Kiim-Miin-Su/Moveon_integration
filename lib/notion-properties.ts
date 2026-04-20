@@ -11,9 +11,6 @@ export type NotionPropertySchema = Record<
     relation?: {
       data_source_id?: string;
       database_id?: string;
-      type?: string;
-      synced_property_id?: string;
-      synced_property_name?: string;
     };
     status?: {
       options?: Array<{ name: string }>;
@@ -331,10 +328,6 @@ export function buildProperties(
     assigneeNotionUserId?: string | null;
     relatedSprintPageIds?: string[];
     hasLinkedIssues?: boolean;
-    parentIssuePageId?: string;
-    hasParentIssue?: boolean;
-    subtaskPageIds?: string[];
-    hasSubtasks?: boolean;
     storyPointsField?: string;
   } = {}
 ): NotionProperties {
@@ -448,40 +441,6 @@ export function buildProperties(
 
     if (relation) {
       properties["Related Sprint"] = {
-        relation,
-      };
-    }
-  }
-
-  if (getSchemaProperty(options.propertySchema, "Parent Issue")?.type === "relation") {
-    let relation: Array<{ id: string }> | [] | undefined;
-
-    if (options.hasParentIssue === false) {
-      relation = [];
-    } else if (options.parentIssuePageId) {
-      relation = [
-        {
-          id: options.parentIssuePageId,
-        },
-      ];
-    }
-
-    if (relation) {
-      properties["Parent Issue"] = {
-        relation,
-      };
-    }
-  }
-
-  if (getSchemaProperty(options.propertySchema, "Subtasks")?.type === "relation") {
-    const relation = options.subtaskPageIds
-      ? options.subtaskPageIds.map((id) => ({ id }))
-      : options.hasSubtasks === false
-        ? []
-        : undefined;
-
-    if (relation) {
-      properties.Subtasks = {
         relation,
       };
     }

@@ -241,8 +241,6 @@ test("adapts page properties to the Notion data source schema", () => {
       "Jira Key": { type: "rich_text" },
       담당자: { type: "people" },
       "Related Sprint": { type: "relation" },
-      "Parent Issue": { type: "relation" },
-      Subtasks: { type: "relation" },
       "Sprint 기간": { type: "date" },
     }),
     {
@@ -371,75 +369,6 @@ test("writes Related Sprint as relation when a related page is provided", () => 
   );
 });
 
-test("writes parent issue relation when a parent page is provided", () => {
-  const childIssue: JiraIssue = {
-    ...issue,
-    fields: {
-      ...issue.fields,
-      subtasks: [],
-    },
-  };
-  const properties = buildProperties(childIssue, {
-    parentIssuePageId: "parent-page-id",
-    propertySchema: {
-      "Parent Issue": { type: "relation" },
-    },
-  });
-
-  assert.deepEqual(properties["Parent Issue"], {
-    relation: [
-      {
-        id: "parent-page-id",
-      },
-    ],
-  });
-  assert.equal(properties.Subtasks, undefined);
-});
-
-test("clears parent issue relation when no synced parent page is available", () => {
-  assert.deepEqual(
-    buildProperties(issue, {
-      parentIssuePageId: "parent-page-id",
-      hasParentIssue: false,
-      propertySchema: {
-        "Parent Issue": { type: "relation" },
-      },
-    })["Parent Issue"],
-    {
-      relation: [],
-    }
-  );
-});
-
-test("writes subtasks only from Jira subtasks", () => {
-  assert.deepEqual(
-    buildProperties(issue, {
-      subtaskPageIds: ["subtask-page-id-1", "subtask-page-id-2"],
-      propertySchema: {
-        Subtasks: { type: "relation" },
-      },
-    }).Subtasks,
-    {
-      relation: [{ id: "subtask-page-id-1" }, { id: "subtask-page-id-2" }],
-    }
-  );
-});
-
-test("clears stale subtasks when Jira has no subtasks", () => {
-  assert.deepEqual(
-    buildProperties(issue, {
-      subtaskPageIds: [],
-      hasSubtasks: false,
-      propertySchema: {
-        Subtasks: { type: "relation" },
-      },
-    }).Subtasks,
-    {
-      relation: [],
-    }
-  );
-});
-
 test("clears stale linked issue relation when Jira has no linked issues", () => {
   const issueWithoutLinks: JiraIssue = {
     ...issue,
@@ -456,28 +385,6 @@ test("clears stale linked issue relation when Jira has no linked issues", () => 
         "Related Sprint": { type: "relation" },
       },
     })["Related Sprint"],
-    {
-      relation: [],
-    }
-  );
-});
-
-test("clears stale parent issue relation when Jira has no parent", () => {
-  const issueWithoutParent: JiraIssue = {
-    ...issue,
-    fields: {
-      ...issue.fields,
-      parent: undefined,
-    },
-  };
-
-  assert.deepEqual(
-    buildProperties(issueWithoutParent, {
-      hasParentIssue: false,
-      propertySchema: {
-        "Parent Issue": { type: "relation" },
-      },
-    })["Parent Issue"],
     {
       relation: [],
     }

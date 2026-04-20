@@ -58,9 +58,7 @@ Share the Notion data source with the Notion integration, then make sure these p
 | Priority | Select | Jira priority names, for example `High`, `Medium`, `Low` |
 | Story point estimate | Number | |
 | Updated at | Date | |
-| Related Sprint | Relation | Links to synced Jira linked issues |
-| Parent Issue | Relation | Links to the synced Jira parent issue |
-| Subtasks | Relation | Links to synced Jira subtasks |
+| Related Sprint | Relation | Links to synced Jira parent issue, subtasks, and linked issues |
 | Sprint 기간 | Date | |
 | Jira URL | URL | |
 
@@ -112,9 +110,7 @@ This implementation does not require Jira custom headers. Jira's webhook passwor
 | `issue.fields.priority.name` | `Priority` |
 | `issue.fields[JIRA_STORY_POINTS_FIELD]` | `Story point estimate` |
 | `issue.fields.updated` | `Updated at` |
-| `issue.fields.issuelinks[].inwardIssue.key` / `issue.fields.issuelinks[].outwardIssue.key` | `Related Sprint` |
-| `issue.fields.parent.key` | `Parent Issue` |
-| `issue.fields.subtasks[].key` | `Subtasks` |
+| `issue.fields.parent.key` + `issue.fields.subtasks[].key` + `issue.fields.issuelinks[].inwardIssue.key` / `issue.fields.issuelinks[].outwardIssue.key` | `Related Sprint` |
 | `issue.fields[JIRA_SPRINT_FIELD].startDate/endDate` | `Sprint 기간` |
 | `JIRA_BASE_URL + /browse/<issue.key>` | `Jira URL` |
 
