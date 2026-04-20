@@ -21,10 +21,12 @@ NOTION_TOKEN=ntn_...
 NOTION_DATASOURCE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 JIRA_BASE_URL=https://<your-site>.atlassian.net
 JIRA_SPRINT_FIELD=customfield_10020
+JIRA_STORY_POINTS_FIELD=customfield_10016
 ```
 
 `JIRA_BASE_URL` is used only to create the Notion `Jira URL` value. Use the root Jira site URL only.
 `JIRA_SPRINT_FIELD` is optional. Jira company-managed projects commonly use `customfield_10020` for Sprint, but the custom field ID can differ by site.
+`JIRA_STORY_POINTS_FIELD` is optional. Jira commonly uses `customfield_10016`, but the custom field ID can differ by site or project.
 
 Good:
 
@@ -54,12 +56,14 @@ Share the Notion data source with the Notion integration, then make sure these p
 | Issue Type | Select | `Bug`, `Task`, `Story` |
 | 담당자 | People | |
 | Priority | Select | Jira priority names, for example `High`, `Medium`, `Low` |
+| Story point estimate | Number | |
 | Updated at | Date | |
+| Related Sprint | Relation | Links to a synced parent or subtask issue |
 | Sprint 기간 | Date | |
 | Jira URL | URL | |
 
 The sync uses `Jira Key` to find existing pages. If a page already exists, it updates that page. If not, it creates a new page.
-Properties such as `ID`, `담당자`, `Created time`, `Related Sprint`, `GitHub Pull Request`, `Blocked by`, `Blocking`, and `Related Docs` are not written by this webhook yet. `ID` is a Notion-generated unique ID, and Jira assignees cannot be written to a People property unless they are mapped to Notion user IDs.
+Properties such as `ID`, `Created time`, `GitHub Pull Request`, `Blocked by`, `Blocking`, and `Related Docs` are not written by this webhook yet. `ID` is a Notion-generated unique ID.
 
 ## Jira Webhook Setup
 
@@ -98,7 +102,9 @@ This implementation does not require Jira custom headers. Jira's webhook passwor
 | `issue.fields.labels` | `Labels` |
 | `issue.fields.issuetype.name` | `Issue Type` |
 | `issue.fields.priority.name` | `Priority` |
+| `issue.fields[JIRA_STORY_POINTS_FIELD]` | `Story point estimate` |
 | `issue.fields.updated` | `Updated at` |
+| `issue.fields.parent.key` / `issue.fields.subtasks[].key` | `Related Sprint` |
 | `issue.fields[JIRA_SPRINT_FIELD].startDate/endDate` | `Sprint 기간` |
 | `JIRA_BASE_URL + /browse/<issue.key>` | `Jira URL` |
 
@@ -133,8 +139,12 @@ Use this JSON body:
       "priority": {
         "name": "High"
       },
+      "customfield_10016": 3,
       "assignee": {
         "displayName": "Min Su Kim"
+      },
+      "parent": {
+        "key": "TMO-1"
       },
       "customfield_10020": [
         {

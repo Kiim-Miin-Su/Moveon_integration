@@ -8,6 +8,10 @@ export type NotionPropertySchema = Record<
   string,
   {
     type?: string;
+    relation?: {
+      data_source_id?: string;
+      database_id?: string;
+    };
     status?: {
       options?: Array<{ name: string }>;
     };
@@ -93,6 +97,16 @@ function toDateProperty(date?: string | null) {
 
 function getTextFromUnknown(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getNumberFromUnknown(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 function collectText(value: unknown): string[] {
@@ -273,6 +287,10 @@ export function getSprint(issue: JiraIssue, sprintField = "customfield_10020") {
   return null;
 }
 
+export function getStoryPoints(issue: JiraIssue, storyPointsField = "customfield_10016") {
+  return getNumberFromUnknown(issue.fields[storyPointsField]);
+}
+
 export function buildJiraUrl(issue: JiraIssue, jiraBaseUrl?: string) {
   const baseUrl = jiraBaseUrl?.replace(/\/$/, "");
 
@@ -297,6 +315,8 @@ export function buildProperties(
     sprintField?: string;
     propertySchema?: NotionPropertySchema;
     assigneeNotionUserId?: string;
+    relatedSprintPageId?: string;
+    storyPointsField?: string;
   } = {}
 ): NotionProperties {
   const summary = issue.fields.summary || issue.key;
@@ -307,6 +327,7 @@ export function buildProperties(
   const jiraUrl = buildJiraUrl(issue, options.jiraBaseUrl);
   const sprint = getSprint(issue, options.sprintField);
   const description = getDescriptionText(issue.fields.description);
+  const storyPoints = getStoryPoints(issue, options.storyPointsField);
   const properties: NotionProperties = {
     Title: {
       title: [
@@ -378,6 +399,22 @@ export function buildProperties(
           text: {
             content: description,
           },
+        },
+      ],
+    };
+  }
+
+  if (storyPoints !== null) {
+    properties["Story point estimate"] = {
+      number: storyPoints,
+    };
+  }
+
+  if (options.propertySchema?.["Related Sprint"]?.type === "relation" && options.relatedSprintPageId) {
+    properties["Related Sprint"] = {
+      relation: [
+        {
+          id: options.relatedSprintPageId,
         },
       ],
     };

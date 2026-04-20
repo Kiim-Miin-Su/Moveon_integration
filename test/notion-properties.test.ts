@@ -54,6 +54,10 @@ const issue: JiraIssue = {
         endDate: "2024-01-29T01:00:00.000Z",
       },
     ],
+    customfield_10016: 3,
+    parent: {
+      key: "TMO-1",
+    },
   },
 };
 
@@ -179,6 +183,9 @@ test("builds Notion page properties from a Jira issue", () => {
         start: "2024-01-15T05:30:00.000+0000",
       },
     },
+    "Story point estimate": {
+      number: 3,
+    },
     "Sprint 기간": {
       date: {
         start: "2024-01-15T01:00:00.000Z",
@@ -209,9 +216,11 @@ test("adapts page properties to the Notion data source schema", () => {
       "Issue Type": { type: "select" },
       ID: { type: "unique_id" },
       Priority: { type: "select" },
+      "Story point estimate": { type: "number" },
       Description: { type: "rich_text" },
       "Jira Key": { type: "rich_text" },
       담당자: { type: "people" },
+      "Related Sprint": { type: "relation" },
       "Sprint 기간": { type: "date" },
     }),
     {
@@ -263,6 +272,9 @@ test("adapts page properties to the Notion data source schema", () => {
           name: "High",
         },
       },
+      "Story point estimate": {
+        number: 3,
+      },
       "Updated at": {
         date: {
           start: "2024-01-15T05:30:00.000+0000",
@@ -291,6 +303,24 @@ test("writes assignee as people when a matching Notion user is provided", () => 
       people: [
         {
           id: "notion-user-id",
+        },
+      ],
+    }
+  );
+});
+
+test("writes Related Sprint as relation when a related page is provided", () => {
+  assert.deepEqual(
+    buildProperties(issue, {
+      relatedSprintPageId: "related-page-id",
+      propertySchema: {
+        "Related Sprint": { type: "relation" },
+      },
+    })["Related Sprint"],
+    {
+      relation: [
+        {
+          id: "related-page-id",
         },
       ],
     }

@@ -2,12 +2,18 @@ import { Client } from "@notionhq/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import type { JiraIssue, JiraWebhookPayload } from "../lib/jira-types";
-import { buildProperties, type NotionPropertySchema } from "../lib/notion-properties";
+import {
+  buildProperties,
+  getSprint,
+  getStoryPoints,
+  type NotionPropertySchema,
+} from "../lib/notion-properties";
 
 const NOTION_TOKEN = getRequiredEnv("NOTION_TOKEN");
 const NOTION_DATA_SOURCE_ID = getRequiredEnv("NOTION_DATASOURCE_ID");
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL;
 const JIRA_SPRINT_FIELD = process.env.JIRA_SPRINT_FIELD;
+const JIRA_STORY_POINTS_FIELD = process.env.JIRA_STORY_POINTS_FIELD || "customfield_10016";
 
 const notion = new Client({
   auth: NOTION_TOKEN,
@@ -59,6 +65,17 @@ async function getPropertySchema() {
       for (const [name, property] of Object.entries(dataSource.properties || {})) {
         schema[name] = {
           type: property.type,
+          relation:
+            property.type === "relation"
+              ? {
+                  data_source_id:
+                    "data_source_id" in property.relation
+                      ? property.relation.data_source_id
+                      : undefined,
+                  database_id:
+                    "database_id" in property.relation ? property.relation.database_id : undefined,
+                }
+              : undefined,
           status:
             property.type === "status"
               ? {
@@ -158,6 +175,62 @@ async function getAssigneeNotionUserId(issue: JiraIssue, propertySchema: NotionP
   return notionUserId;
 }
 
+function getCustomFieldPreview(issue: JiraIssue) {
+  return Object.entries(issue.fields)
+    .filter(([key, value]) => key.startsWith("customfield_") && value !== null && value !== undefined)
+    .map(([key, value]) => ({
+      key,
+      type: Array.isArray(value) ? "array" : typeof value,
+      value:
+        typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+          ? value
+          : Array.isArray(value)
+            ? `array(${value.length})`
+            : "object",
+    }));
+}
+
+async function getRelatedSprintPageId(issue: JiraIssue, propertySchema: NotionPropertySchema) {
+  if (propertySchema["Related Sprint"]?.type !== "relation") {
+    console.warn("Notion property Related Sprint is missing or not a relation; skipping relation.", {
+      key: issue.key,
+      notionType: propertySchema["Related Sprint"]?.type || "missing_property",
+    });
+    return undefined;
+  }
+
+  const relatedIssueKeys = [
+    issue.fields.parent?.key,
+    ...(issue.fields.subtasks || []).map((subtask) => subtask.key),
+  ].filter((key): key is string => Boolean(key));
+
+  if (relatedIssueKeys.length === 0) {
+    console.warn("Jira issue has no parent or subtasks; cannot map Related Sprint relation.", {
+      key: issue.key,
+    });
+    return undefined;
+  }
+
+  for (const relatedIssueKey of relatedIssueKeys) {
+    const relatedPage = await findPageByJiraKey(relatedIssueKey);
+
+    if (relatedPage) {
+      console.log("Mapped Jira hierarchy to Related Sprint page.", {
+        key: issue.key,
+        relatedIssueKey,
+        source: relatedIssueKey === issue.fields.parent?.key ? "parent" : "subtask",
+      });
+      return relatedPage.id;
+    }
+  }
+
+  console.warn("No synced Notion page found for Jira parent/subtasks; skipping Related Sprint.", {
+    key: issue.key,
+    relatedIssueKeys,
+  });
+  return undefined;
+}
+
 function getPayloadType(value: unknown) {
   if (!value || typeof value !== "object") return typeof value;
 
@@ -195,7 +268,9 @@ function logSyncDiagnostics(
     { property: "Status", source: "issue.fields.status.name" },
     { property: "담당자", source: "issue.fields.assignee.emailAddress" },
     { property: "Priority", source: "issue.fields.priority.name" },
+    { property: "Story point estimate", source: JIRA_STORY_POINTS_FIELD },
     { property: "Updated at", source: "issue.fields.updated" },
+    { property: "Related Sprint", source: "issue.fields.parent.key / issue.fields.subtasks[].key" },
     { property: "Sprint 기간", source: JIRA_SPRINT_FIELD || "customfield_10020" },
     { property: "Jira URL", source: "JIRA_BASE_URL/self" },
   ];
@@ -211,8 +286,15 @@ function logSyncDiagnostics(
     key: issue.key,
     jiraStatus: issue.fields.status?.name || null,
     notionStatus: getStatusName(properties.Status) || null,
+    storyPointsField: JIRA_STORY_POINTS_FIELD,
+    storyPoints: getStoryPoints(issue, JIRA_STORY_POINTS_FIELD),
+    sprintField: JIRA_SPRINT_FIELD || "customfield_10020",
+    sprintName: getSprint(issue, JIRA_SPRINT_FIELD)?.name || null,
+    parentKey: issue.fields.parent?.key || null,
+    subtaskKeys: (issue.fields.subtasks || []).map((subtask) => subtask.key).filter(Boolean),
     hasAssignee: Boolean(issue.fields.assignee),
     assigneeHasEmail: Boolean(issue.fields.assignee?.emailAddress),
+    customFields: getCustomFieldPreview(issue),
     properties: diagnostics,
   });
 }
@@ -242,11 +324,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const existingPage = await findPageByJiraKey(issue.key);
     const propertySchema = await getPropertySchema();
     const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
+    const relatedSprintPageId = await getRelatedSprintPageId(issue, propertySchema);
     const properties = buildProperties(issue, {
       jiraBaseUrl: JIRA_BASE_URL,
       sprintField: JIRA_SPRINT_FIELD,
+      storyPointsField: JIRA_STORY_POINTS_FIELD,
       propertySchema,
       assigneeNotionUserId,
+      relatedSprintPageId,
     });
 
     logSyncDiagnostics(issue, propertySchema, properties);
