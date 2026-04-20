@@ -355,6 +355,96 @@ function getPayloadType(value: unknown) {
   );
 }
 
+function getPageRelationIds(
+  page: unknown,
+  propertySchema: NotionPropertySchema,
+  propertyName: string
+) {
+  const actualPropertyName = getSchemaEntry(propertySchema, propertyName)?.name || propertyName;
+  const properties = (page as { properties?: Record<string, unknown> }).properties || {};
+  const property = properties[actualPropertyName] as
+    | { type?: string; relation?: Array<{ id?: string }> }
+    | undefined;
+
+  return property?.type === "relation"
+    ? (property.relation || []).map((relation) => relation.id).filter((id): id is string => Boolean(id))
+    : [];
+}
+
+async function updateRelationProperty(
+  pageId: string,
+  propertySchema: NotionPropertySchema,
+  propertyName: string,
+  pageIds: string[]
+) {
+  const schemaEntry = getSchemaEntry(propertySchema, propertyName);
+
+  if (schemaEntry?.property.type !== "relation") return;
+
+  const uniquePageIds = [...new Set(pageIds)];
+
+  await notion.pages.update({
+    page_id: pageId,
+    properties: {
+      [schemaEntry.name]: {
+        relation: uniquePageIds.map((id) => ({ id })),
+      },
+    },
+  });
+}
+
+async function syncHierarchyRelations(
+  issue: JiraIssue,
+  currentPageId: string,
+  propertySchema: NotionPropertySchema
+) {
+  const parentKey = issue.fields.parent?.key;
+
+  if (parentKey && getSchemaEntry(propertySchema, "Subtasks")?.property.type === "relation") {
+    const parentPage = await findPageByJiraKey(parentKey);
+
+    if (parentPage) {
+      await updateRelationProperty(parentPage.id, propertySchema, "Subtasks", [
+        ...getPageRelationIds(parentPage, propertySchema, "Subtasks"),
+        currentPageId,
+      ]);
+      console.log("Added current Jira issue to parent page Subtasks relation.", {
+        key: issue.key,
+        parentKey,
+      });
+    } else {
+      console.warn("Cannot add current issue to parent Subtasks; parent page is not synced.", {
+        key: issue.key,
+        parentKey,
+      });
+    }
+  }
+
+  if (getSchemaEntry(propertySchema, "Parent Issue")?.property.type !== "relation") return;
+
+  const subtaskKeys = (issue.fields.subtasks || [])
+    .map((subtask) => subtask.key)
+    .filter((key): key is string => Boolean(key));
+
+  for (const subtaskKey of subtaskKeys) {
+    const subtaskPage = await findPageByJiraKey(subtaskKey);
+
+    if (!subtaskPage) {
+      console.warn("Cannot set subtask Parent Issue; subtask page is not synced.", {
+        key: issue.key,
+        subtaskKey,
+      });
+      continue;
+    }
+
+    await updateRelationProperty(subtaskPage.id, propertySchema, "Parent Issue", [currentPageId]);
+    console.log("Set subtask page Parent Issue relation to current Jira issue.", {
+      key: issue.key,
+      subtaskKey,
+    });
+  }
+}
+
 function getStatusName(value: unknown) {
   if (!value || typeof value !== "object") return undefined;
   const property = value as { status?: { name?: string }; select?: { name?: string } };
@@ -517,6 +607,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         page_id: existingPage.id,
         properties,
       });
+      await syncHierarchyRelations(issue, existingPage.id, propertySchema);
 
       if (existingPages.length > 1) {
         await Promise.all(
@@ -547,6 +638,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         page_id: pageBeforeCreate.id,
         properties,
       });
+      await syncHierarchyRelations(issue, pageBeforeCreate.id, propertySchema);
 
       if (pagesBeforeCreate.length > 1) {
         await Promise.all(
@@ -581,10 +673,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    await notion.pages.create({
+    const createdPage = await notion.pages.create({
       parent: { data_source_id: NOTION_DATA_SOURCE_ID },
       properties,
     });
+    await syncHierarchyRelations(issue, createdPage.id, propertySchema);
 
     console.log("Created Jira issue in Notion:", issue.key);
     return res.status(200).json({ ok: true, action: "created", key: issue.key });
