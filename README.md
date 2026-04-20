@@ -45,8 +45,8 @@ Share the Notion data source with the Notion integration, then make sure these p
 
 | Property | Type | Options |
 | --- | --- | --- |
-| Sprint [scrum-xx] : Title | Title | |
-| Summary | Rich text | |
+| Title | Title | |
+| Description | Rich text | |
 | ID | Unique ID | |
 | Jira Key | Rich text | |
 | Status | Status | `Todo`, `In progress`, `Test/Review`, `Done` |
@@ -55,7 +55,6 @@ Share the Notion data source with the Notion integration, then make sure these p
 | 담당자 | People | |
 | Priority | Select | Jira priority names, for example `High`, `Medium`, `Low` |
 | Updated at | Date | |
-| Sprint Name | Rich text | |
 | Sprint 기간 | Date | |
 | Jira URL | URL | |
 
@@ -93,13 +92,13 @@ This implementation does not require Jira custom headers. Jira's webhook passwor
 | --- | --- |
 | `issue.id` | `ID` |
 | `issue.key` | `Jira Key` |
-| `issue.fields.summary` | `Sprint [scrum-xx] : Title`, `Summary` |
+| `issue.fields.summary` | `Title` |
+| `issue.fields.description` | `Description` |
 | `issue.fields.status.name` | `Status` |
 | `issue.fields.labels` | `Labels` |
 | `issue.fields.issuetype.name` | `Issue Type` |
 | `issue.fields.priority.name` | `Priority` |
 | `issue.fields.updated` | `Updated at` |
-| `issue.fields[JIRA_SPRINT_FIELD].name` | `Sprint Name` |
 | `issue.fields[JIRA_SPRINT_FIELD].startDate/endDate` | `Sprint 기간` |
 | `JIRA_BASE_URL + /browse/<issue.key>` | `Jira URL` |
 

@@ -6,6 +6,7 @@ export type JiraIssue = {
     created?: string;
     updated?: string;
     summary?: string;
+    description?: unknown;
     status?: {
       name?: string;
     };

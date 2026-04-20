@@ -95,6 +95,30 @@ function getTextFromUnknown(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function collectText(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+
+  const node = value as {
+    text?: unknown;
+    content?: unknown;
+  };
+  const text = typeof node.text === "string" ? [node.text] : [];
+  const children = Array.isArray(node.content) ? node.content.flatMap(collectText) : [];
+
+  return [...text, ...children];
+}
+
+function getDescriptionText(value: unknown) {
+  if (typeof value === "string") return value.trim() || null;
+
+  const text = collectText(value)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return text || null;
+}
+
 function getTitlePropertyName(schema?: NotionPropertySchema) {
   return Object.entries(schema || {}).find(([, property]) => property.type === "title")?.[0];
 }
@@ -119,6 +143,17 @@ function getPlainText(property: NotionPropertyValue) {
   };
 
   return value.title?.[0]?.text?.content || value.rich_text?.[0]?.text?.content || "";
+}
+
+function getPreferredTitleText(properties: NotionProperties) {
+  if (properties.Title) return getPlainText(properties.Title);
+
+  const explicitTitle = Object.values(properties).find(
+    (property) => property && typeof property === "object" && "title" in property
+  );
+  if (explicitTitle) return getPlainText(explicitTitle);
+
+  return properties.Description ? getPlainText(properties.Description) : "";
 }
 
 function textProperty(type: "title" | "rich_text", content: string): NotionPropertyValue {
@@ -164,11 +199,11 @@ export function adaptPropertiesToSchema(
   if (!schema) return properties;
 
   const adapted: NotionProperties = {};
-  const summary = properties.Summary ? getPlainText(properties.Summary) : "";
+  const titleText = getPreferredTitleText(properties);
   const titleName = getTitlePropertyName(schema);
 
   if (titleName && !properties[titleName]) {
-    adapted[titleName] = textProperty("title", summary);
+    adapted[titleName] = textProperty("title", titleText);
   }
 
   for (const [name, property] of Object.entries(properties)) {
@@ -271,8 +306,9 @@ export function buildProperties(
     "Unassigned";
   const jiraUrl = buildJiraUrl(issue, options.jiraBaseUrl);
   const sprint = getSprint(issue, options.sprintField);
+  const description = getDescriptionText(issue.fields.description);
   const properties: NotionProperties = {
-    Summary: {
+    Title: {
       title: [
         {
           text: {
@@ -335,6 +371,18 @@ export function buildProperties(
     },
   };
 
+  if (description) {
+    properties.Description = {
+      rich_text: [
+        {
+          text: {
+            content: description,
+          },
+        },
+      ],
+    };
+  }
+
   const priority = mapPriority(issue.fields.priority?.name);
   if (priority) {
     properties.Priority = {
@@ -347,19 +395,6 @@ export function buildProperties(
   const updatedAt = toDateProperty(issue.fields.updated);
   if (updatedAt) {
     properties["Updated at"] = updatedAt;
-  }
-
-  const sprintName = getTextFromUnknown(sprint?.name);
-  if (sprintName) {
-    properties["Sprint Name"] = {
-      rich_text: [
-        {
-          text: {
-            content: sprintName,
-          },
-        },
-      ],
-    };
   }
 
   if (sprint?.startDate) {

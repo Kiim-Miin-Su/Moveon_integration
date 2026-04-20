@@ -20,6 +20,20 @@ const issue: JiraIssue = {
   fields: {
     updated: "2024-01-15T05:30:00.000+0000",
     summary: "Improve onboarding",
+    description: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Sync Jira issues into Notion.",
+            },
+          ],
+        },
+      ],
+    },
     status: {
       name: "In Progress",
     },
@@ -94,7 +108,7 @@ test("builds Jira browser URL from configured base URL", () => {
 
 test("builds Notion page properties from a Jira issue", () => {
   assert.deepEqual(buildProperties(issue, { jiraBaseUrl: "https://example.atlassian.net" }), {
-    Summary: {
+    Title: {
       title: [
         {
           text: {
@@ -117,6 +131,15 @@ test("builds Notion page properties from a Jira issue", () => {
         {
           text: {
             content: "MOV-123",
+          },
+        },
+      ],
+    },
+    Description: {
+      rich_text: [
+        {
+          text: {
+            content: "Sync Jira issues into Notion.",
           },
         },
       ],
@@ -156,15 +179,6 @@ test("builds Notion page properties from a Jira issue", () => {
         start: "2024-01-15T05:30:00.000+0000",
       },
     },
-    "Sprint Name": {
-      rich_text: [
-        {
-          text: {
-            content: "Example Sprint",
-          },
-        },
-      ],
-    },
     "Sprint 기간": {
       date: {
         start: "2024-01-15T01:00:00.000Z",
@@ -178,7 +192,7 @@ test("adapts page properties to the Notion data source schema", () => {
   assert.deepEqual(
     adaptPropertiesToSchema(buildProperties(issue, { jiraBaseUrl: "https://example.atlassian.net" }), {
       Labels: { type: "multi_select" },
-      "Sprint Name": { type: "rich_text" },
+      Title: { type: "title" },
       "Jira URL": { type: "url" },
       "Updated at": { type: "date" },
       Status: {
@@ -195,24 +209,14 @@ test("adapts page properties to the Notion data source schema", () => {
       "Issue Type": { type: "select" },
       ID: { type: "unique_id" },
       Priority: { type: "select" },
-      Summary: { type: "rich_text" },
+      Description: { type: "rich_text" },
       "Jira Key": { type: "rich_text" },
       담당자: { type: "people" },
-      "Sprint [scrum-xx] : Title": { type: "title" },
       "Sprint 기간": { type: "date" },
     }),
     {
-      "Sprint [scrum-xx] : Title": {
+      Title: {
         title: [
-          {
-            text: {
-              content: "Improve onboarding",
-            },
-          },
-        ],
-      },
-      Summary: {
-        rich_text: [
           {
             text: {
               content: "Improve onboarding",
@@ -225,6 +229,15 @@ test("adapts page properties to the Notion data source schema", () => {
           {
             text: {
               content: "MOV-123",
+            },
+          },
+        ],
+      },
+      Description: {
+        rich_text: [
+          {
+            text: {
+              content: "Sync Jira issues into Notion.",
             },
           },
         ],
@@ -254,15 +267,6 @@ test("adapts page properties to the Notion data source schema", () => {
         date: {
           start: "2024-01-15T05:30:00.000+0000",
         },
-      },
-      "Sprint Name": {
-        rich_text: [
-          {
-            text: {
-              content: "Example Sprint",
-            },
-          },
-        ],
       },
       "Sprint 기간": {
         date: {

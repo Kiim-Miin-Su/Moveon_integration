@@ -189,14 +189,13 @@ function logSyncDiagnostics(
   properties: ReturnType<typeof buildProperties>
 ) {
   const checks = [
-    { property: "Sprint [scrum-xx] : Title", source: "issue.fields.summary" },
-    { property: "Summary", source: "issue.fields.summary" },
+    { property: "Title", source: "issue.fields.summary" },
+    { property: "Description", source: "issue.fields.description" },
     { property: "Jira Key", source: "issue.key" },
     { property: "Status", source: "issue.fields.status.name" },
     { property: "담당자", source: "issue.fields.assignee.emailAddress" },
     { property: "Priority", source: "issue.fields.priority.name" },
     { property: "Updated at", source: "issue.fields.updated" },
-    { property: "Sprint Name", source: JIRA_SPRINT_FIELD || "customfield_10020" },
     { property: "Sprint 기간", source: JIRA_SPRINT_FIELD || "customfield_10020" },
     { property: "Jira URL", source: "JIRA_BASE_URL/self" },
   ];
