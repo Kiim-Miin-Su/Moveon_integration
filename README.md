@@ -7,7 +7,7 @@ Jira issue webhook events are synced into a Notion data source through a Vercel 
 After deploying to Vercel, use this URL as the Jira webhook URL:
 
 ```text
-https://<your-vercel-project>.vercel.app/api/jira_notion
+https://<your-vercel-project>.vercel.app/api/jira
 ```
 
 The webhook URL is configured in Jira. It is not an environment variable.
@@ -64,7 +64,7 @@ System > Webhooks
 Create a webhook with:
 
 ```text
-URL: https://<your-vercel-project>.vercel.app/api/jira_notion
+URL: https://<your-vercel-project>.vercel.app/api/jira
 ```
 
 Recommended issue events:

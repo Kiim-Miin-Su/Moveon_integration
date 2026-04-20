@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/*.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/jira",
+      "dest": "/api/jira.ts"
+    },
+    {
+      "src": "/api/jira_notion",
+      "dest": "/api/jira_notion.ts"
+    }
+  ]
+}
