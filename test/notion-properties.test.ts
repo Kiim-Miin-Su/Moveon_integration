@@ -411,6 +411,35 @@ test("clears parent issue relation when no synced parent page is available", () 
   );
 });
 
+test("writes subtasks only from Jira subtasks", () => {
+  assert.deepEqual(
+    buildProperties(issue, {
+      subtaskPageIds: ["subtask-page-id-1", "subtask-page-id-2"],
+      propertySchema: {
+        Subtasks: { type: "relation" },
+      },
+    }).Subtasks,
+    {
+      relation: [{ id: "subtask-page-id-1" }, { id: "subtask-page-id-2" }],
+    }
+  );
+});
+
+test("clears stale subtasks when Jira has no subtasks", () => {
+  assert.deepEqual(
+    buildProperties(issue, {
+      subtaskPageIds: [],
+      hasSubtasks: false,
+      propertySchema: {
+        Subtasks: { type: "relation" },
+      },
+    }).Subtasks,
+    {
+      relation: [],
+    }
+  );
+});
+
 test("clears stale linked issue relation when Jira has no linked issues", () => {
   const issueWithoutLinks: JiraIssue = {
     ...issue,

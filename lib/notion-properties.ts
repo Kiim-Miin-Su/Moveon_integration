@@ -333,6 +333,8 @@ export function buildProperties(
     hasLinkedIssues?: boolean;
     parentIssuePageId?: string;
     hasParentIssue?: boolean;
+    subtaskPageIds?: string[];
+    hasSubtasks?: boolean;
     storyPointsField?: string;
   } = {}
 ): NotionProperties {
@@ -466,6 +468,20 @@ export function buildProperties(
 
     if (relation) {
       properties["Parent Issue"] = {
+        relation,
+      };
+    }
+  }
+
+  if (getSchemaProperty(options.propertySchema, "Subtasks")?.type === "relation") {
+    const relation = options.subtaskPageIds
+      ? options.subtaskPageIds.map((id) => ({ id }))
+      : options.hasSubtasks === false
+        ? []
+        : undefined;
+
+    if (relation) {
+      properties.Subtasks = {
         relation,
       };
     }
