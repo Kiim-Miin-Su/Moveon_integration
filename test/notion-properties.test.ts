@@ -369,18 +369,20 @@ test("writes Related Sprint as relation when a related page is provided", () => 
   );
 });
 
-test("clears stale linked issue relation when Jira has no linked issues", () => {
+test("clears stale Related Sprint relation when no related candidates exist", () => {
   const issueWithoutLinks: JiraIssue = {
     ...issue,
     fields: {
       ...issue.fields,
       issuelinks: [],
+      parent: undefined,
+      subtasks: [],
     },
   };
 
   assert.deepEqual(
     buildProperties(issueWithoutLinks, {
-      hasLinkedIssues: false,
+      hasRelatedSprintCandidates: false,
       propertySchema: {
         "Related Sprint": { type: "relation" },
       },

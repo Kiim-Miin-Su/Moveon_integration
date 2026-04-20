@@ -327,7 +327,7 @@ export function buildProperties(
     propertySchema?: NotionPropertySchema;
     assigneeNotionUserId?: string | null;
     relatedSprintPageIds?: string[];
-    hasLinkedIssues?: boolean;
+    hasRelatedSprintCandidates?: boolean;
     storyPointsField?: string;
   } = {}
 ): NotionProperties {
@@ -435,7 +435,7 @@ export function buildProperties(
   if (getSchemaProperty(options.propertySchema, "Related Sprint")?.type === "relation") {
     const relation = options.relatedSprintPageIds?.length
       ? options.relatedSprintPageIds.map((id) => ({ id }))
-      : options.hasLinkedIssues === false
+      : options.hasRelatedSprintCandidates === false
         ? []
         : undefined;
 

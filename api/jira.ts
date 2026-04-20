@@ -373,7 +373,7 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
     console.log(
       "Jira issue has no related issue keys (parent/subtasks/links); Related Sprint will be cleared if present.",
       {
-      key: issue.key,
+        key: issue.key,
       }
     );
     return undefined;
@@ -397,8 +397,8 @@ async function getRelatedSprintPageIds(issue: JiraIssue, propertySchema: NotionP
     console.warn(
       "No synced Notion page found for Jira related issues (parent/subtasks/links); skipping Related Sprint.",
       {
-      key: issue.key,
-      relatedIssueKeys,
+        key: issue.key,
+        relatedIssueKeys,
       }
     );
     return undefined;
@@ -579,7 +579,7 @@ async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionProp
     propertySchema,
     assigneeNotionUserId,
     relatedSprintPageIds,
-    hasLinkedIssues: getRelatedSprintCandidateKeys(issue).length > 0,
+    hasRelatedSprintCandidates: getRelatedSprintCandidateKeys(issue).length > 0,
   });
 
   logSyncDiagnostics(issue, propertySchema, properties);
