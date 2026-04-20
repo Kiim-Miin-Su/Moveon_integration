@@ -325,18 +325,15 @@ export function buildProperties(
     jiraBaseUrl?: string;
     sprintField?: string;
     propertySchema?: NotionPropertySchema;
-    assigneeNotionUserId?: string;
+    assigneeNotionUserId?: string | null;
     relatedSprintPageIds?: string[];
+    hasLinkedIssues?: boolean;
     parentIssuePageId?: string;
-    subtaskPageIds?: string[];
+    hasParentIssue?: boolean;
     storyPointsField?: string;
   } = {}
 ): NotionProperties {
   const summary = issue.fields.summary || issue.key;
-  const assignee =
-    issue.fields.assignee?.displayName ||
-    issue.fields.assignee?.emailAddress ||
-    "Unassigned";
   const jiraUrl = buildJiraUrl(issue, options.jiraBaseUrl);
   const sprint = getSprint(issue, options.sprintField);
   const description = getDescriptionText(issue.fields.description);
@@ -382,29 +379,42 @@ export function buildProperties(
         name: mapIssueType(issue.fields.issuetype?.name),
       },
     },
-    담당자:
-      getSchemaProperty(options.propertySchema, "담당자")?.type === "people" &&
-      options.assigneeNotionUserId
-        ? {
-            people: [
-              {
-                id: options.assigneeNotionUserId,
-              },
-            ],
-          }
-        : {
-            rich_text: [
-              {
-                text: {
-                  content: assignee,
-                },
-              },
-            ],
-          },
     "Jira URL": {
       url: jiraUrl,
     },
   };
+
+  const assigneePropertyType = getSchemaProperty(options.propertySchema, "담당자")?.type;
+  if (assigneePropertyType === "people") {
+    if (options.assigneeNotionUserId) {
+      properties.담당자 = {
+        people: [
+          {
+            id: options.assigneeNotionUserId,
+          },
+        ],
+      };
+    } else if (options.assigneeNotionUserId === null) {
+      properties.담당자 = {
+        people: [],
+      };
+    }
+  } else {
+    const assignee =
+      issue.fields.assignee?.displayName ||
+      issue.fields.assignee?.emailAddress ||
+      "Unassigned";
+
+    properties.담당자 = {
+      rich_text: [
+        {
+          text: {
+            content: assignee,
+          },
+        },
+      ],
+    };
+  }
 
   if (description) {
     properties.Description = {
@@ -424,35 +434,36 @@ export function buildProperties(
     };
   }
 
-  if (
-    getSchemaProperty(options.propertySchema, "Related Sprint")?.type === "relation" &&
-    options.relatedSprintPageIds?.length
-  ) {
-    properties["Related Sprint"] = {
-      relation: options.relatedSprintPageIds.map((id) => ({ id })),
-    };
+  if (getSchemaProperty(options.propertySchema, "Related Sprint")?.type === "relation") {
+    const relation = options.relatedSprintPageIds?.length
+      ? options.relatedSprintPageIds.map((id) => ({ id }))
+      : options.hasLinkedIssues === false
+        ? []
+        : undefined;
+
+    if (relation) {
+      properties["Related Sprint"] = {
+        relation,
+      };
+    }
   }
 
-  if (
-    getSchemaProperty(options.propertySchema, "Parent Issue")?.type === "relation" &&
-    options.parentIssuePageId
-  ) {
-    properties["Parent Issue"] = {
-      relation: [
-        {
-          id: options.parentIssuePageId,
-        },
-      ],
-    };
-  }
+  if (getSchemaProperty(options.propertySchema, "Parent Issue")?.type === "relation") {
+    const relation = options.parentIssuePageId
+      ? [
+          {
+            id: options.parentIssuePageId,
+          },
+        ]
+      : options.hasParentIssue === false
+        ? []
+        : undefined;
 
-  if (
-    getSchemaProperty(options.propertySchema, "Subtasks")?.type === "relation" &&
-    options.subtaskPageIds?.length
-  ) {
-    properties.Subtasks = {
-      relation: options.subtaskPageIds.map((id) => ({ id })),
-    };
+    if (relation) {
+      properties["Parent Issue"] = {
+        relation,
+      };
+    }
   }
 
   const priority = mapPriority(issue.fields.priority?.name);

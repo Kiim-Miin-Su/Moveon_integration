@@ -331,6 +331,28 @@ test("writes assignee as people when a matching Notion user is provided", () => 
   );
 });
 
+test("clears people assignee when Jira has no assignee", () => {
+  const unassignedIssue: JiraIssue = {
+    ...issue,
+    fields: {
+      ...issue.fields,
+      assignee: null,
+    },
+  };
+
+  assert.deepEqual(
+    buildProperties(unassignedIssue, {
+      assigneeNotionUserId: null,
+      propertySchema: {
+        담당자: { type: "people" },
+      },
+    }).담당자,
+    {
+      people: [],
+    }
+  );
+});
+
 test("writes Related Sprint as relation when a related page is provided", () => {
   assert.deepEqual(
     buildProperties(issue, {
@@ -349,13 +371,11 @@ test("writes Related Sprint as relation when a related page is provided", () => 
   );
 });
 
-test("writes parent and subtasks as separate relations when related pages are provided", () => {
+test("writes parent issue relation when a parent page is provided", () => {
   const properties = buildProperties(issue, {
     parentIssuePageId: "parent-page-id",
-    subtaskPageIds: ["subtask-page-id-1", "subtask-page-id-2"],
     propertySchema: {
       "Parent Issue": { type: "relation" },
-      Subtasks: { type: "relation" },
     },
   });
 
@@ -366,7 +386,49 @@ test("writes parent and subtasks as separate relations when related pages are pr
       },
     ],
   });
-  assert.deepEqual(properties.Subtasks, {
-    relation: [{ id: "subtask-page-id-1" }, { id: "subtask-page-id-2" }],
-  });
+  assert.equal(properties.Subtasks, undefined);
+});
+
+test("clears stale linked issue relation when Jira has no linked issues", () => {
+  const issueWithoutLinks: JiraIssue = {
+    ...issue,
+    fields: {
+      ...issue.fields,
+      issuelinks: [],
+    },
+  };
+
+  assert.deepEqual(
+    buildProperties(issueWithoutLinks, {
+      hasLinkedIssues: false,
+      propertySchema: {
+        "Related Sprint": { type: "relation" },
+      },
+    })["Related Sprint"],
+    {
+      relation: [],
+    }
+  );
+});
+
+test("clears stale parent issue relation when Jira has no parent", () => {
+  const issueWithoutParent: JiraIssue = {
+    ...issue,
+    fields: {
+      ...issue.fields,
+      parent: undefined,
+    },
+  };
+
+  assert.deepEqual(
+    buildProperties(issueWithoutParent, {
+      hasParentIssue: false,
+      propertySchema: {
+        "Parent Issue": { type: "relation" },
+      },
+    })["Parent Issue"],
+    {
+      relation: [],
+    }
+  );
 });

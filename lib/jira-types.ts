@@ -46,6 +46,8 @@ export type JiraIssue = {
 
 export type JiraWebhookPayload = {
   issue?: JiraIssue;
+  sourceIssue?: JiraIssue;
+  destinationIssue?: JiraIssue;
   webhookEvent?: string;
   issue_event_type_name?: string;
 };

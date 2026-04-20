@@ -89,7 +89,12 @@ Issue updated
 Issue transitioned
 Issue assigned
 Issue deleted
+Issue link created
+Issue link deleted
 ```
+
+`Issue link created` and `Issue link deleted` are needed for Jira linked work items to refresh `Related Sprint`. Attachments are not used by this sync.
+For sprint and board events, enable delete events only if you want Jira deletions to reach the endpoint; issue create/update/delete are the core events for Notion page creation and updates.
 
 This implementation does not require Jira custom headers. Jira's webhook password/basic auth setting is not used by the current code.
 
@@ -171,7 +176,7 @@ Use this JSON body:
 }
 ```
 
-The actual Jira webhook sends the top-level `issue` object. For manual testing, this endpoint also accepts the issue object directly.
+The actual Jira webhook usually sends the top-level `issue` object. Issue link webhooks can include `sourceIssue` and `destinationIssue`; this endpoint updates both when Jira sends both. For manual testing, this endpoint also accepts the issue object directly.
 
 ## Local Check
 
