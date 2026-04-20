@@ -396,7 +396,7 @@ test("writes parent issue relation when a parent page is provided", () => {
   assert.equal(properties.Subtasks, undefined);
 });
 
-test("clears parent issue relation when the current Jira issue is treated as a parent", () => {
+test("clears parent issue relation when no synced parent page is available", () => {
   assert.deepEqual(
     buildProperties(issue, {
       parentIssuePageId: "parent-page-id",

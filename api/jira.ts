@@ -58,6 +58,27 @@ function getSchemaType(propertySchema: NotionPropertySchema, propertyName: strin
   return getSchemaEntry(propertySchema, propertyName)?.property.type;
 }
 
+function areSyncedRelationPair(
+  propertySchema: NotionPropertySchema,
+  propertyName: string,
+  syncedPropertyName: string
+) {
+  const property = getSchemaEntry(propertySchema, propertyName)?.property;
+  const syncedProperty = getSchemaEntry(propertySchema, syncedPropertyName);
+
+  return (
+    property?.type === "relation" &&
+    property.relation?.type === "dual_property" &&
+    syncedProperty &&
+    normalizeComparablePropertyName(property.relation.synced_property_name || "") ===
+      normalizeComparablePropertyName(syncedProperty.name)
+  );
+}
+
+function normalizeComparablePropertyName(name: string) {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function logSchemaCompatibility(propertySchema: NotionPropertySchema) {
   const expectedProperties = [
     { name: "Title", expectedType: "title", required: true },
@@ -194,17 +215,33 @@ async function getPropertySchema() {
       const schema: NotionPropertySchema = {};
 
       for (const [name, property] of Object.entries(dataSource.properties || {})) {
+        const relation =
+          property.type === "relation"
+            ? (property.relation as {
+                type?: string;
+                data_source_id?: string;
+                database_id?: string;
+                dual_property?: {
+                  synced_property_id?: string;
+                  synced_property_name?: string;
+                };
+              })
+            : undefined;
+
         schema[name] = {
           type: property.type,
           relation:
-            property.type === "relation"
+            relation
               ? {
                   data_source_id:
-                    "data_source_id" in property.relation
-                      ? property.relation.data_source_id
+                    "data_source_id" in relation
+                      ? relation.data_source_id
                       : undefined,
                   database_id:
-                    "database_id" in property.relation ? property.relation.database_id : undefined,
+                    "database_id" in relation ? relation.database_id : undefined,
+                  type: relation.type,
+                  synced_property_id: relation.dual_property?.synced_property_id,
+                  synced_property_name: relation.dual_property?.synced_property_name,
                 }
               : undefined,
           status:
@@ -488,88 +525,69 @@ async function updateRelationProperty(
 async function syncHierarchyRelations(
   issue: JiraIssue,
   currentPageId: string,
-  propertySchema: NotionPropertySchema
+  propertySchema: NotionPropertySchema,
+  currentPage?: NotionPageResult
 ) {
-  const parentKey = issue.fields.parent?.key;
+  const hasParentIssueRelation = getSchemaType(propertySchema, "Parent Issue") === "relation";
   const hasSubtasksRelation = getSchemaType(propertySchema, "Subtasks") === "relation";
+  const hasSyncedParentSubtasksRelation =
+    areSyncedRelationPair(propertySchema, "Parent Issue", "Subtasks") ||
+    areSyncedRelationPair(propertySchema, "Subtasks", "Parent Issue");
   const subtaskKeys = getSubtaskKeys(issue);
+  const subtaskPages: NotionPageResult[] = [];
+
+  for (const subtaskKey of subtaskKeys) {
+    const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
+
+    if (!subtaskPage) {
+      console.warn("Cannot sync subtask relation; subtask page is not synced.", {
+        key: issue.key,
+        subtaskKey,
+      });
+      continue;
+    }
+
+    if (subtaskPage.id !== currentPageId) {
+      subtaskPages.push(subtaskPage);
+    }
+  }
+
+  const subtaskPageIds = subtaskPages.map((page) => page.id);
+
+  if (hasSyncedParentSubtasksRelation && hasParentIssueRelation) {
+    for (const subtaskPage of subtaskPages) {
+      await updateRelationProperty(subtaskPage.id, propertySchema, "Parent Issue", [currentPageId]);
+      console.log("Set subtask page Parent Issue; Notion will populate parent Subtasks.", {
+        key: issue.key,
+        subtaskPageId: subtaskPage.id,
+      });
+    }
+
+    const existingSubtaskPageIds = currentPage
+      ? getPageRelationIds(currentPage, propertySchema, "Subtasks")
+      : [];
+    const removedSubtaskPageIds = existingSubtaskPageIds.filter(
+      (pageId) => !subtaskPageIds.includes(pageId)
+    );
+
+    for (const removedSubtaskPageId of removedSubtaskPageIds) {
+      await updateRelationProperty(removedSubtaskPageId, propertySchema, "Parent Issue", []);
+      console.log("Cleared removed subtask Parent Issue; Notion will remove it from parent Subtasks.", {
+        key: issue.key,
+        removedSubtaskPageId,
+      });
+    }
+
+    return;
+  }
 
   if (hasSubtasksRelation) {
-    const subtaskPageIds: string[] = [];
-
-    for (const subtaskKey of subtaskKeys) {
-      const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
-
-      if (!subtaskPage) {
-        console.warn("Cannot set current page Subtasks; subtask page is not synced.", {
-          key: issue.key,
-          subtaskKey,
-        });
-        continue;
-      }
-
-      if (subtaskPage.id !== currentPageId) {
-        subtaskPageIds.push(subtaskPage.id);
-      }
-    }
-
     await updateRelationProperty(currentPageId, propertySchema, "Subtasks", subtaskPageIds);
-
-    if (subtaskPageIds.length > 0) {
-      console.log("Set current Jira issue Subtasks relation from Jira subtasks.", {
-        key: issue.key,
-        subtaskKeys,
-        subtaskPageIds,
-      });
-    }
-  }
-
-  if (parentKey && hasSubtasksRelation && subtaskKeys.length === 0) {
-    const parentPage = await findPageByJiraKey(parentKey, propertySchema);
-
-    if (parentPage?.id === currentPageId) {
-      console.warn("Skipped parent Subtasks update because parent page equals current page.", {
-        key: issue.key,
-        parentKey,
-      });
-    } else if (parentPage) {
-      const nextSubtasks = [
-        ...getPageRelationIds(parentPage, propertySchema, "Subtasks").filter(
-          (pageId) => pageId !== parentPage.id && pageId !== currentPageId
-        ),
-        currentPageId,
-      ];
-
-      await updateRelationProperty(parentPage.id, propertySchema, "Subtasks", nextSubtasks);
-      console.log("Added current Jira issue to parent page Subtasks relation.", {
-        key: issue.key,
-        parentKey,
-      });
-    } else {
-      console.warn("Cannot add current issue to parent Subtasks; parent page is not synced.", {
-        key: issue.key,
-        parentKey,
-      });
-    }
-  }
-
-  if (parentKey && hasSubtasksRelation && subtaskKeys.length > 0) {
-    const parentPage = await findPageByJiraKey(parentKey, propertySchema);
-
-    if (parentPage) {
-      await updateRelationProperty(
-        parentPage.id,
-        propertySchema,
-        "Subtasks",
-        getPageRelationIds(parentPage, propertySchema, "Subtasks").filter(
-          (pageId) => pageId !== currentPageId
-        )
-      );
-      console.log("Removed current Jira issue from parent Subtasks because current issue has its own subtasks.", {
-        key: issue.key,
-        parentKey,
-      });
-    }
+    console.log("Set current Jira issue Subtasks relation directly.", {
+      key: issue.key,
+      subtaskKeys,
+      subtaskPageIds,
+    });
   }
 }
 
@@ -579,6 +597,29 @@ async function cleanupHierarchyRelationsOnDelete(
   propertySchema: NotionPropertySchema
 ) {
   const parentKey = issue.fields.parent?.key;
+  const hasSyncedParentSubtasksRelation =
+    areSyncedRelationPair(propertySchema, "Parent Issue", "Subtasks") ||
+    areSyncedRelationPair(propertySchema, "Subtasks", "Parent Issue");
+
+  if (hasSyncedParentSubtasksRelation && getSchemaType(propertySchema, "Parent Issue") === "relation") {
+    for (const deletedPageId of deletedPageIds) {
+      await updateRelationProperty(deletedPageId, propertySchema, "Parent Issue", []);
+    }
+
+    for (const subtaskKey of getSubtaskKeys(issue)) {
+      const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
+
+      if (!subtaskPage) continue;
+
+      await updateRelationProperty(subtaskPage.id, propertySchema, "Parent Issue", []);
+      console.log("Cleared Parent Issue from subtask after parent Jira issue deletion.", {
+        key: issue.key,
+        subtaskKey,
+      });
+    }
+
+    return;
+  }
 
   if (parentKey && getSchemaType(propertySchema, "Subtasks") === "relation") {
     const parentPage = await findPageByJiraKey(parentKey, propertySchema);
@@ -601,11 +642,7 @@ async function cleanupHierarchyRelationsOnDelete(
 
   if (getSchemaType(propertySchema, "Parent Issue") !== "relation") return;
 
-  const subtaskKeys = (issue.fields.subtasks || [])
-    .map((subtask) => subtask.key)
-    .filter((key): key is string => Boolean(key));
-
-  for (const subtaskKey of subtaskKeys) {
+  for (const subtaskKey of getSubtaskKeys(issue)) {
     const subtaskPage = await findPageByJiraKey(subtaskKey, propertySchema);
 
     if (!subtaskPage) continue;
@@ -752,11 +789,7 @@ function isIssueCreatedEvent(payload: JiraWebhookPayload | JiraIssue) {
 async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionPropertySchema) {
   const assigneeNotionUserId = await getAssigneeNotionUserId(issue, propertySchema);
   const relatedSprintPageIds = await getRelatedSprintPageIds(issue, propertySchema);
-  const subtaskKeys = getSubtaskKeys(issue);
-  const shouldWriteParentIssue = subtaskKeys.length === 0 && Boolean(issue.fields.parent?.key);
-  const parentIssuePageId = shouldWriteParentIssue
-    ? await getParentIssuePageId(issue, propertySchema)
-    : undefined;
+  const parentIssuePageId = await getParentIssuePageId(issue, propertySchema);
 
   const properties = buildProperties(issue, {
     jiraBaseUrl: JIRA_BASE_URL,
@@ -767,7 +800,7 @@ async function buildIssueProperties(issue: JiraIssue, propertySchema: NotionProp
     relatedSprintPageIds,
     hasLinkedIssues: getLinkedIssueKeys(issue).length > 0,
     parentIssuePageId,
-    hasParentIssue: shouldWriteParentIssue,
+    hasParentIssue: Boolean(parentIssuePageId),
   });
 
   logSyncDiagnostics(issue, propertySchema, properties);
@@ -787,7 +820,7 @@ async function updateExistingPage(
     page_id: page.id,
     properties,
   });
-  await syncHierarchyRelations(issue, page.id, propertySchema);
+  await syncHierarchyRelations(issue, page.id, propertySchema, page);
 
   const duplicateCleanup = await archiveDuplicatePages(issue.key, page.id, propertySchema);
 
@@ -885,7 +918,7 @@ async function syncIssue(
     parent: { data_source_id: NOTION_DATA_SOURCE_ID },
     properties,
   });
-  await syncHierarchyRelations(issue, createdPage.id, propertySchema);
+  await syncHierarchyRelations(issue, createdPage.id, propertySchema, createdPage as NotionPageResult);
 
   const duplicateCleanup = await archiveDuplicatePages(issue.key, createdPage.id, propertySchema);
 

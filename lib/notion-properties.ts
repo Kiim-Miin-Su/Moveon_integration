@@ -11,6 +11,9 @@ export type NotionPropertySchema = Record<
     relation?: {
       data_source_id?: string;
       database_id?: string;
+      type?: string;
+      synced_property_id?: string;
+      synced_property_name?: string;
     };
     status?: {
       options?: Array<{ name: string }>;
