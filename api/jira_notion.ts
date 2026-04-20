@@ -27,10 +27,9 @@ type JiraWebhookPayload = {
   issue_event_type_name?: string;
 };
 
-const NOTION_TOKEN = getRequiredEnv("NTN_TOKEN");
+const NOTION_TOKEN = getRequiredEnv("NOTION_TOKEN");
 const NOTION_DATA_SOURCE_ID = getRequiredEnv("NOTION_DATASOURCE_ID");
 const JIRA_BASE_URL = process.env.JIRA_BASE_URL?.replace(/\/$/, "");
-const WEBHOOK_SECRET = process.env.JIRA_WEBHOOK_SECRET;
 
 const notion = new Client({
   auth: NOTION_TOKEN,
@@ -45,17 +44,6 @@ function getRequiredEnv(...names: string[]) {
   }
 
   throw new Error(`Missing required environment variable: ${names.join(" or ")}`);
-}
-
-function getHeader(req: VercelRequest, name: string) {
-  const value = req.headers[name.toLowerCase()];
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function isAuthorized(req: VercelRequest) {
-  if (!WEBHOOK_SECRET) return true;
-
-  return getHeader(req, "x-jira-webhook-secret") === WEBHOOK_SECRET;
 }
 
 function mapStatus(status?: string) {
@@ -191,10 +179,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
       return res.status(405).json({ ok: false, error: "Method Not Allowed" });
-    }
-
-    if (!isAuthorized(req)) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
     const event = req.body as JiraWebhookPayload;
