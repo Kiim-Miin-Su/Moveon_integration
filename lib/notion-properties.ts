@@ -467,11 +467,14 @@ export function buildProperties(
     properties["Updated at"] = updatedAt;
   }
 
-  if (sprint?.startDate) {
+  const sprintStart = issue.fields.customfield_10015 ?? toKSTDateString(sprint?.startDate);
+  const sprintEnd = issue.fields.duedate ?? toKSTDateString(sprint?.endDate);
+  
+  if (sprintStart) {
     properties["Sprint 기간"] = {
       date: {
-        start: toKSTDateString(sprint.startDate)!,
-        end: (issue.fields.duedate ?? toKSTDateString(sprint.endDate)) as string | undefined,
+        start: sprintStart as string,
+        end: sprintEnd as string | undefined,
       },
     };
   }
